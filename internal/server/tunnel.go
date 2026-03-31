@@ -185,6 +185,10 @@ func (tm *TunnelManager) OpenProxyChannel(tunnelID string) (ssh.Channel, error) 
 		return nil, fmt.Errorf("tunnel %s not found", tunnelID)
 	}
 
+	if entry.Session.Conn == nil {
+		return nil, fmt.Errorf("tunnel %s: session has no SSH connection", tunnelID)
+	}
+
 	ch, _, err := entry.Session.Conn.OpenChannel("proxy", []byte(tunnelID))
 	if err != nil {
 		return nil, fmt.Errorf("open proxy channel for tunnel %s: %w", tunnelID, err)
