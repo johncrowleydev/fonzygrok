@@ -29,6 +29,12 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("store: open database %q: %w", dbPath, err)
 	}
 
+	// For in-memory databases, limit to a single connection so all
+	// queries share the same database instance.
+	if dbPath == ":memory:" {
+		db.SetMaxOpenConns(1)
+	}
+
 	// Enable WAL mode for concurrent reads per GOV-008.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
