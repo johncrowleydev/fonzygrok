@@ -1,0 +1,34 @@
+services:
+  fonzygrok-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VERSION: "${FONZYGROK_VERSION:-dev}"
+    container_name: fonzygrok-server
+    restart: unless-stopped
+    ports:
+      - "${SSH_PORT:-2222}:2222"
+      - "${HTTP_PORT:-8080}:8080"
+      - "${ADMIN_PORT:-9090}:9090"
+    volumes:
+      - fonzygrok-data:/data
+    environment:
+      - DOMAIN=${DOMAIN:-tunnel.localhost}
+    command:
+      - serve
+      - --data-dir=/data
+      - --ssh-addr=:2222
+      - --http-addr=:8080
+      - --admin-addr=0.0.0.0:9090
+      - --domain=${DOMAIN:-tunnel.localhost}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  fonzygrok-data:
+    driver: local

@@ -1,22 +1,48 @@
-.PHONY: build build-server build-client test lint clean
+.PHONY: build build-server build-client test test-e2e lint vet clean docker-build docker-up docker-down docker-logs
 
 VERSION ?= dev
-LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
+LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X github.com/fonzygrok/fonzygrok/internal/server.Version=$(VERSION)"
 
+## Build both binaries
 build: build-server build-client
 
 build-server:
-	go build $(LDFLAGS) -o fonzygrok-server ./cmd/server/
+	CGO_ENABLED=1 go build $(LDFLAGS) -o bin/fonzygrok-server ./cmd/server/
 
 build-client:
-	go build $(LDFLAGS) -o fonzygrok ./cmd/client/
+	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/fonzygrok ./cmd/client/
 
+## Run all unit tests with race detection
 test:
-	go test -race ./...
+	CGO_ENABLED=1 go test -race ./...
 
-lint:
+## Run end-to-end integration tests
+test-e2e:
+	CGO_ENABLED=1 go test -v -race -tags=e2e -timeout 60s ./tests/
+
+## Linting
+lint: vet
+
+vet:
 	go vet ./...
 
+## Clean build artifacts
 clean:
 	rm -f fonzygrok-server fonzygrok
-	rm -rf dist/
+	rm -rf bin/ dist/
+
+## Build Docker image
+docker-build:
+	docker build -t fonzygrok-server:$(VERSION) -f docker/Dockerfile --build-arg VERSION=$(VERSION) .
+
+## Start server in Docker
+docker-up:
+	docker compose -f docker/docker-compose.yml up -d
+
+## Stop Docker containers
+docker-down:
+	docker compose -f docker/docker-compose.yml down
+
+## View Docker logs
+docker-logs:
+	docker compose -f docker/docker-compose.yml logs -f
