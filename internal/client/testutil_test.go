@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fonzygrok/fonzygrok/internal/proto"
 	"golang.org/x/crypto/ssh"
@@ -22,6 +24,8 @@ type testSSHServer struct {
 	addr       string
 	validToken string
 	t          *testing.T
+	mu         sync.Mutex
+	conns      []net.Conn
 }
 
 // startTestSSHServer starts a minimal SSH server that:
@@ -72,6 +76,7 @@ func startTestSSHServer(t *testing.T, validToken string) (addr string, cleanup f
 
 	return srv.addr, func() {
 		srv.listener.Close()
+		srv.closeAllConns()
 	}
 }
 
@@ -82,8 +87,21 @@ func (s *testSSHServer) acceptLoop() {
 		if err != nil {
 			return // listener closed
 		}
+		s.mu.Lock()
+		s.conns = append(s.conns, tcpConn)
+		s.mu.Unlock()
 		go s.handleConn(tcpConn)
 	}
+}
+
+// closeAllConns forcibly closes all tracked TCP connections.
+func (s *testSSHServer) closeAllConns() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.conns {
+		c.Close()
+	}
+	s.conns = nil
 }
 
 // handleConn performs the SSH server handshake and dispatches channels.
@@ -261,4 +279,54 @@ func startTestSSHServerWithErrorResponse(t *testing.T, validToken string, errCod
 	}()
 
 	return listener.Addr().String(), func() { listener.Close() }
+}
+
+// startTestSSHServerOnAddr starts a test SSH server on a specific address.
+// Used for reconnect tests where the client must reconnect to the same addr.
+// If the address is already in use, it retries briefly to allow OS socket recycling.
+func startTestSSHServerOnAddr(t *testing.T, validToken string, addr string) (string, func()) {
+	t.Helper()
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("testSSHServer: generate host key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("testSSHServer: create signer: %v", err)
+	}
+
+	sshCfg := &ssh.ServerConfig{
+		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+			if string(password) != validToken {
+				return nil, fmt.Errorf("invalid token")
+			}
+			return &ssh.Permissions{}, nil
+		},
+	}
+	sshCfg.AddHostKey(signer)
+
+	// Retry binding to the address — the OS may take a moment to release it.
+	var listener net.Listener
+	for i := 0; i < 20; i++ {
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("testSSHServer: listen on %s: %v", addr, err)
+	}
+
+	srv := &testSSHServer{
+		listener:   listener,
+		sshConfig:  sshCfg,
+		addr:       listener.Addr().String(),
+		validToken: validToken,
+		t:          t,
+	}
+	go srv.acceptLoop()
+
+	return srv.addr, func() { listener.Close() }
 }
