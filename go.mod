@@ -2,7 +2,10 @@ module github.com/fonzygrok/fonzygrok
 
 go 1.26.1
 
-require modernc.org/sqlite v1.48.0
+require (
+	golang.org/x/crypto v0.49.0
+	modernc.org/sqlite v1.48.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
