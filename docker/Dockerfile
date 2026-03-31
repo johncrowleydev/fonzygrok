@@ -28,7 +28,7 @@ FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 
 # Create non-root user.
-RUN adduser -D -u 65534 fonzygrok
+RUN adduser -D -u 10001 fonzygrok
 
 # Copy binaries.
 COPY --from=builder /out/fonzygrok-server /usr/local/bin/fonzygrok-server
