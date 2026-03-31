@@ -1,0 +1,477 @@
+# ============================================================================
+# MANIFEST.yaml — Machine-Readable Document Registry
+# ============================================================================
+#
+# PURPOSE: This is the agent's map. An AI agent given any task can read this
+# single file, filter by tags/status/type/agents field, and locate exactly the
+# docs it needs — no directory crawling required.
+#
+# USAGE (agent):
+#   1. Parse this file
+#   2. Filter documents by relevant tags, type, or agents field
+#   3. Read only the docs that match your task
+#
+# USAGE (human with yq):
+#   yq '.documents[] | select(.tags[] == "testing")' MANIFEST.yaml
+#   yq '.documents[] | select(.status == "APPROVED")' MANIFEST.yaml
+#   yq '.documents[] | select(.agents[] == "coder")' MANIFEST.yaml
+#
+# MAINTENANCE: Update this file whenever a doc is created, moved, or archived.
+#   Run: CODEX/_scripts/manifest-gen.sh (when available) to auto-regenerate.
+# ============================================================================
+
+schema_version: "1.0.0"
+project: "fonzygrok"
+generated: "2026-03-31"
+
+# ── Area Definitions ──────────────────────────────────────────────────────────
+areas:
+  - number: 5
+    name: PROJECT
+    slug: project
+    description: "Active project state — roadmap, sprints, backlog"
+    category_codes: [PRJ, SPR, BCK]
+
+  - number: 10
+    name: GOVERNANCE
+    slug: governance
+    description: "Standards, protocols, coding rules, architecture decisions"
+    category_codes: [GOV, ADR]
+
+  - number: 20
+    name: BLUEPRINTS
+    slug: blueprints
+    description: "Component specifications, system designs, API contracts"
+    category_codes: [BLU, API]
+
+  - number: 30
+    name: RUNBOOKS
+    slug: runbooks
+    description: "Operational how-to guides, deployment, workflows"
+    category_codes: [RUN, DEP]
+
+  - number: 40
+    name: VERIFICATION
+    slug: verification
+    description: "Test specs, QA standards, validation reports"
+    category_codes: [VER, QA]
+
+  - number: 50
+    name: DEFECTS
+    slug: defects
+    description: "Bug reports, root cause analysis, incident forensics"
+    category_codes: [DEF, RCA]
+
+  - number: 60
+    name: EVOLUTION
+    slug: evolution
+    description: "Feature specs, enhancement proposals, roadmaps"
+    category_codes: [EVO, RFC]
+
+  - number: 70
+    name: RESEARCH
+    slug: research
+    description: "Whitepapers, investigations, POCs, literature reviews"
+    category_codes: [RES, POC]
+
+  - number: 80
+    name: AGENTS
+    slug: agents
+    description: "Agent role definitions — Architect, Developer, Tester templates"
+    category_codes: [AGT]
+
+  - number: 90
+    name: ARCHIVE
+    slug: archive
+    description: "Deprecated and completed docs"
+    category_codes: [ARC]
+
+# ── Document Registry ─────────────────────────────────────────────────────────
+documents:
+
+  # ── 00_INDEX ────────────────────────────────────────────────────────────────
+  - id: IDX-000
+    path: 00_INDEX/README.md
+    title: "Documentation Master Index"
+    type: reference
+    status: APPROVED
+    tags: [index, navigation, entry-point]
+    agents: [all]
+    summary: >
+      Single entry point for all project documentation.
+      Humans browse here. Agents read MANIFEST.yaml.
+
+  # ── 05_PROJECT ─────────────────────────────────────────────────────────────
+  - id: PRJ-001
+    path: 05_PROJECT/PRJ-001_Roadmap.md
+    title: "Fonzygrok — Roadmap"
+    type: explanation
+    status: APPROVED
+    tags: [project-management, roadmap, governance, agentic-development]
+    agents: [all]
+    summary: >
+      Project roadmap for fonzygrok — self-hosted ngrok alternative in Go.
+      Three phases: MVP (HTTP tunneling), Polish (TLS, inspection), Production
+      (multi-user, dashboard). Vision, scope, delivery phases, success criteria.
+
+  - id: BCK-001
+    path: 05_PROJECT/BCK-001_Backlog.md
+    title: "Developer Backlog"
+    type: planning
+    status: ACTIVE
+    tags: [project-management, backlog, development]
+    agents: [coder]
+    summary: >
+      Prioritized developer backlog with 22 items mapped across 7 sprints
+      for fonzygrok v1.0. Covers scaffolding through Docker deployment.
+
+  - id: BCK-002
+    path: 05_PROJECT/BCK-002_ArchitectBacklog.md
+    title: "Architect Agent Backlog"
+    type: planning
+    status: ACTIVE
+    tags: [project-management, backlog, architect, audit, deployment]
+    agents: [architect]
+    summary: >
+      Architect's own backlog — CODEX bootstrapping, sprint audits,
+      integration testing, deployment verification, document maintenance.
+
+  - id: SPR-001
+    path: 05_PROJECT/SPR-001_Foundation.md
+    title: "Sprint 001: Foundation — Scaffold, Storage & Auth"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, scaffolding, storage, auth]
+    agents: [coder]
+    summary: >
+      Serial foundation sprint: Go module, directory structure, Makefile,
+      shared protocol types, SQLite store, token auth. Must merge before
+      parallel tracks start.
+
+  - id: SPR-002A
+    path: 05_PROJECT/SPR-002A_SSH_Server.md
+    title: "Sprint 002A: Server Track — SSH Server & Control Handler"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, ssh, server]
+    agents: [coder]
+    summary: >
+      Server track: SSH listener + auth, control channel handler, tunnel
+      manager. Dev A owns internal/server/.
+
+  - id: SPR-002B
+    path: 05_PROJECT/SPR-002B_SSH_Client.md
+    title: "Sprint 002B: Client Track — SSH Client & Control Sender"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, ssh, client]
+    agents: [coder]
+    summary: >
+      Client track: SSH connector, control channel sender, local proxy
+      with buffer pool. Dev B owns internal/client/.
+
+  - id: SPR-003A
+    path: 05_PROJECT/SPR-003A_HTTP_Edge.md
+    title: "Sprint 003A: Server Track — HTTP Edge Router"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, http, routing, server]
+    agents: [coder]
+    summary: >
+      Server track: HTTP edge with Host header routing, proxy through
+      SSH tunnel, error responses, server info endpoint.
+
+  - id: SPR-003B
+    path: 05_PROJECT/SPR-003B_CLI_Reconnect.md
+    title: "Sprint 003B: Client Track — CLI, Auto-Reconnect & Logging"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, cli, reconnect, client]
+    agents: [coder]
+    summary: >
+      Client track: cobra CLI, auto-reconnect with exponential backoff,
+      structured slog logging, graceful shutdown.
+
+  - id: SPR-004A
+    path: 05_PROJECT/SPR-004A_Admin_Orchestrator.md
+    title: "Sprint 004A: Server Track — Admin API & Server Orchestrator"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, api, server, orchestrator]
+    agents: [coder]
+    summary: >
+      Server track: Admin REST API (token CRUD, tunnel list, health),
+      server orchestrator wiring, server CLI with token commands.
+
+  - id: SPR-005
+    path: 05_PROJECT/SPR-005_Integration.md
+    title: "Sprint 005: Merge — Integration, Docker & E2E Testing"
+    type: how-to
+    status: PLANNING
+    tags: [project-management, sprint, workflow, integration, docker, testing]
+    agents: [coder]
+    summary: >
+      Merge sprint: both tracks converge. Integration wiring, Docker
+      packaging (distroless), comprehensive E2E test suite. v1.0 ship.
+
+  # ── 10_GOVERNANCE ───────────────────────────────────────────────────────────
+  - id: GOV-001
+    path: 10_GOVERNANCE/GOV-001_DocumentationStandard.md
+    title: "Documentation Standard"
+    type: reference
+    status: APPROVED
+    tags: [documentation, standards, naming, frontmatter, templates, governance]
+    agents: [all]
+    summary: >
+      NASA/JPL-grade documentation standard. YAML frontmatter, BLUF-first
+      writing, Indexed Decimal folder structure. Enforces change control
+      (NPR 7150.2D), peer review gates, requirements traceability (DO-178C),
+      and formal retention/archival policies.
+
+  - id: GOV-002
+    path: 10_GOVERNANCE/GOV-002_TestingProtocol.md
+    title: "Testing Protocol"
+    type: reference
+    status: APPROVED
+    tags: [testing, verification, governance, standards, quality]
+    agents: [all]
+    summary: >
+      NASA/JPL-grade testing protocol. 14 test tiers from static analysis to
+      HIL. Bidirectional requirements traceability, assertion density mandates,
+      MC/DC coverage, forensic artifacts, and fail-fast execution order.
+
+  - id: GOV-003
+    path: 10_GOVERNANCE/GOV-003_CodingStandard.md
+    title: "Coding Standard"
+    type: reference
+    status: APPROVED
+    tags: [coding, standards, governance, quality, safety]
+    agents: [all]
+    summary: >
+      NASA/JPL-grade polyglot coding standard for Python, C/C++, and
+      React/TypeScript. NASA Power of 10 backbone, MISRA C:2025, DO-178C
+      code review mandates, dead code prohibition, boundary conditions,
+      incident-readability enhancements (inline ADRs, panic breadcrumbs),
+      WCAG 2.1 AA accessibility, data-testid testability, static analysis
+      profiles, and Disaster-Readability Principle.
+
+  - id: GOV-004
+    path: 10_GOVERNANCE/GOV-004_ErrorHandlingProtocol.md
+    title: "Error Handling Protocol"
+    type: reference
+    status: APPROVED
+    tags: [coding, standards, governance, quality, safety]
+    agents: [all]
+    summary: >
+      NASA/JPL-grade zero-dark-failure error handling. 13-category taxonomy,
+      severity levels with DAL mapping (DO-178C), structured error context,
+      crash artifacts, circuit breakers, correlation IDs, FMEA requirements,
+      and mandatory post-incident review.
+
+  - id: GOV-005
+    path: 10_GOVERNANCE/GOV-005_AgenticDevelopmentLifecycle.md
+    title: "Agentic Development Lifecycle"
+    type: reference
+    status: APPROVED
+    tags: [governance, standards, project-management, workflow]
+    agents: [all]
+    summary: >
+      Project lifecycle for human-Architect + AI-agent teams. Replaces
+      traditional Agile with scope-bounded sprints, emergent work items,
+      one-agent-per-branch, natural checkpoints, and human-in-the-loop
+      merge/deploy.
+
+  - id: GOV-006
+    path: 10_GOVERNANCE/GOV-006_LoggingSpecification.md
+    title: "Logging Specification"
+    type: reference
+    status: APPROVED
+    tags: [coding, standards, governance, quality, safety]
+    agents: [all]
+    summary: >
+      NASA/JPL-grade structured logging for Python, TypeScript, and C++.
+      Trace-first design for agent execution reconstruction. Database and
+      flat-file storage, forensic query patterns, correlation IDs, and
+      retention policies.
+
+  - id: GOV-007
+    path: 10_GOVERNANCE/GOV-007_AgenticProjectManagement.md
+    title: "Agentic Project Management Standard"
+    type: reference
+    status: APPROVED
+    tags: [governance, standards, project-management, workflow, agentic-development]
+    agents: [all]
+    summary: >
+      Defines CODEX as the Markdown OS for project management. Covers the
+      three-tier hierarchy (Human → Architect → Developer/Tester), document
+      taxonomy (PRJ/SPR/BLU/CON/DEF/AGT), sprint lifecycle, discrepancy
+      resolution protocol, and agent reading order.
+
+  - id: GOV-008
+    path: 10_GOVERNANCE/GOV-008_InfrastructureAndOperations.md
+    title: "Infrastructure and Operations"
+    type: reference
+    status: APPROVED
+    tags: [governance, infrastructure, operations, deployment, docker]
+    agents: [all]
+    summary: >
+      Fonzygrok infrastructure decisions: Docker Compose on single VPS,
+      SQLite embedded database, Go single-binary builds, port assignments,
+      security model, adaptation table from architecture assumptions.
+
+  # ── 20_BLUEPRINTS ──────────────────────────────────────────────────────────
+  - id: BLU-001
+    path: 20_BLUEPRINTS/BLU-001_System_Architecture.md
+    title: "Fonzygrok System Architecture Blueprint"
+    type: explanation
+    status: DRAFT
+    tags: [architecture, design, networking, tunneling, golang]
+    agents: [all]
+    summary: >
+      Full system architecture: server subsystems (SSH listener, HTTP edge,
+      tunnel manager, admin API), client subsystems (SSH connector, local
+      proxy, CLI), Go project layout, protocol design, error/logging strategy.
+
+  - id: CON-001
+    path: 20_BLUEPRINTS/CON-001_Client_Server_Protocol.md
+    title: "Client-Server Protocol Contract"
+    type: reference
+    status: DRAFT
+    tags: [standards, specification, networking, protocol, ssh]
+    agents: [all]
+    summary: >
+      Binding contract for SSH transport, authentication (token as SSH password),
+      control channel (newline-delimited JSON), tunnel lifecycle state machine,
+      data channel (proxy) semantics, Go type definitions.
+
+  - id: CON-002
+    path: 20_BLUEPRINTS/CON-002_HTTP_Edge_Admin_API.md
+    title: "HTTP Edge & Admin API Contract"
+    type: reference
+    status: DRAFT
+    tags: [standards, specification, api, http, routing]
+    agents: [all]
+    summary: >
+      Binding contract for HTTP edge routing (Host header, subdomain matching,
+      X-Forwarded headers, error responses), admin REST API (token CRUD,
+      tunnel listing, health check), Go type definitions.
+
+  - id: BLU-020
+    path: 20_BLUEPRINTS/BLU-020_CODEX_System_Blueprint.md
+    title: "CODEX System Blueprint"
+    type: explanation
+    status: DRAFT
+    tags: [governance, documentation, standards, architecture, workflow]
+    agents: [all]
+    summary: >
+      Explains how the CODEX documentation engine works — dual-audience design,
+      area architecture, three discovery mechanisms (MANIFEST, TAG_TAXONOMY,
+      README), governance stack, compliance workflows, and DarkGravity swarm
+      integration. Template orientation doc.
+
+  # ── 30_RUNBOOKS ────────────────────────────────────────────────────────────
+  - id: RUN-DG-001
+    path: 30_RUNBOOKS/RUN-DG-001_DarkGravity_Setup_Recovery.md
+    title: "DarkGravity Setup & Recovery Guide"
+    type: how-to
+    status: APPROVED
+    tags: [darkgravity, setup, recovery, workflow]
+    agents: [coder, researcher, architect]
+    summary: >
+      Install, configure, and recover the DarkGravity multi-agent swarm engine.
+      Covers fresh install, auto-discovery via resolve_darkgravity.sh,
+      API key setup, troubleshooting, and nuclear recovery.
+
+  # ── 40_VERIFICATION ────────────────────────────────────────────────────────
+  # (empty — add project-specific verification docs here)
+
+  # ── 50_DEFECTS ─────────────────────────────────────────────────────────────
+  # (empty — add project-specific defect reports here)
+
+  # ── 60_EVOLUTION ───────────────────────────────────────────────────────────
+  # (empty — add project-specific evolution docs here)
+
+  # ── 70_RESEARCH ────────────────────────────────────────────────────────────
+  - id: RES-001
+    path: 70_RESEARCH/RES-001_Tunneling_Architecture_Research.md
+    title: "Tunneling Architecture Research"
+    type: reference
+    status: APPROVED
+    tags: [research, architecture, networking, tunneling, golang]
+    agents: [all]
+    summary: >
+      Research into ngrok and open-source alternatives (chisel, frp, sish, zrok).
+      Core patterns, Go library choices, multiplexing trade-offs, technology
+      recommendations for building a self-hosted tunnel service in Go.
+
+  # ── 80_AGENTS ──────────────────────────────────────────────────────────────
+  - id: AGT-001
+    path: 80_AGENTS/AGT-001_Architect_Agent.md
+    title: "Architect Agent — Role Definition"
+    type: reference
+    status: APPROVED
+    tags: [governance, agent-instructions, project-management, agentic-development, workflow]
+    agents: [architect]
+    summary: >
+      Defines the Architect Agent role: owns CODEX, manages Developer and Tester
+      agents, audits code against contracts, resolves discrepancies with Human.
+      Does not write feature code. Includes reading order and primary workflows.
+
+  - id: AGT-002
+    path: 80_AGENTS/AGT-002_Developer_Agent.md
+    title: "Developer Agent — Role Definition"
+    type: reference
+    status: APPROVED
+    tags: [governance, agent-instructions, project-management, agentic-development, coding]
+    agents: [coder]
+    summary: >
+      Defines the Developer Agent role: executes sprint tasks against blueprints
+      and contracts, proposes contract changes via EVO- docs, reports blockers
+      upstream. Technology-stack agnostic.
+
+  - id: AGT-003
+    path: 80_AGENTS/AGT-003_Tester_Agent.md
+    title: "Tester Agent — Role Definition"
+    type: reference
+    status: APPROVED
+    tags: [governance, agent-instructions, project-management, agentic-development, testing, verification]
+    agents: [tester]
+    summary: >
+      Defines the Tester Agent role: independently verifies developer output
+      against contracts, files DEF- defect reports to Architect, issues
+      pass/fail verdicts for sprint closure. No direct communication with Developer.
+
+  - id: AGT-002-FG
+    path: 80_AGENTS/AGT-002-FG_Developer_Boot.md
+    title: "Developer Agent — Fonzygrok Project Boot Document"
+    type: reference
+    status: DRAFT
+    tags: [agent-instructions, agentic-development, project-specific, golang]
+    agents: [coder]
+    summary: >
+      Project-specific boot document for the fonzygrok developer agent.
+      Environment, Go tech stack, CODEX reading order, binding contracts
+      (CON-001, CON-002), governance checklist, communication protocol.
+
+  - id: AGT-002-FG-A
+    path: 80_AGENTS/AGT-002-FG-A_Server_Dev_Boot.md
+    title: "Developer A (Server Track) — Fonzygrok Boot Document"
+    type: reference
+    status: DRAFT
+    tags: [agent-instructions, agentic-development, project-specific, golang, server]
+    agents: [coder]
+    summary: >
+      Server-track boot doc for Dev A. Owns internal/server/, internal/store/,
+      cmd/server/. Sprint sequence: SPR-001 → SPR-002A → SPR-003A → SPR-004A → SPR-005.
+
+  - id: AGT-002-FG-B
+    path: 80_AGENTS/AGT-002-FG-B_Client_Dev_Boot.md
+    title: "Developer B (Client Track) — Fonzygrok Boot Document"
+    type: reference
+    status: DRAFT
+    tags: [agent-instructions, agentic-development, project-specific, golang, client]
+    agents: [coder]
+    summary: >
+      Client-track boot doc for Dev B. Owns internal/client/, cmd/client/.
+      Sprint sequence: SPR-002B → SPR-003B → SPR-005. Includes test SSH
+      server strategy for testing without real server.
