@@ -12,9 +12,9 @@ updated: 2026-03-31
 version: 2.0.0
 ---
 
-> **BLUF:** Prioritized developer backlog for fonzygrok v1.0, restructured for **parallel execution** with two developer tracks (Server + Client). Items map to sprint tasks, contracts, and file ownership boundaries.
+> **BLUF:** Prioritized developer backlog for fonzygrok, restructured for **parallel execution** with two developer tracks (Server + Client). Items map to sprint tasks, contracts, and file ownership boundaries.
 
-# Developer Backlog — Fonzygrok v1.0 (Parallel Tracks)
+# Developer Backlog — Fonzygrok (Parallel Tracks)
 
 ---
 
@@ -84,6 +84,15 @@ SPR-004A      │
 | B-017 | Docker packaging | SPR-005 | GOV-008 §1, §4 | Both |
 | B-018 | E2E integration test suite | SPR-005 | CON-001 §10, CON-002 §9 | Both |
 
+### v1.1 — Custom Subdomains (SPR-006)
+
+| # | Item | Sprint | Contract | Owner |
+|:--|:-----|:-------|:---------|:------|
+| B-019 | Name generator package (word list, validate, generate) | SPR-006 | — | Dev A |
+| B-020 | Protocol extension (Name field in TunnelRequest/Assignment) | SPR-006 | CON-001 §8 | Dev A |
+| B-021 | Server name handling (uniqueness, reserved names, routing) | SPR-006 | CON-002 §3.1 | Dev A |
+| B-022 | Client --name flag + auto-generated fallback | SPR-006 | BLU-001 §2.8 | Dev B |
+
 ---
 
 ## File Ownership Boundaries
@@ -92,7 +101,8 @@ SPR-004A      │
 |:-----|:--------------:|:--------------:|
 | `internal/server/*` | ✅ Write | ❌ |
 | `internal/client/*` | ❌ | ✅ Write |
-| `internal/proto/*` | ✅ SPR-001 only | ❌ Read-only |
+| `internal/proto/*` | ✅ SPR-001, SPR-006 | ❌ Read-only |
+| `internal/names/*` | ✅ SPR-006 | ❌ Read-only |
 | `internal/auth/*` | ✅ SPR-001 only | ❌ Read-only |
 | `internal/store/*` | ✅ Write | ❌ |
 | `cmd/server/*` | ✅ Write | ❌ |
@@ -109,3 +119,4 @@ SPR-004A      │
 |:-----|:--------|:-------|:-------|
 | 2026-03-31 | 1.0.0 | Initial sequential backlog | Architect |
 | 2026-03-31 | 2.0.0 | Restructured for parallel execution (Server + Client tracks) | Architect |
+| 2026-03-31 | 3.0.0 | Added v1.1 backlog items (SPR-006 custom subdomains) | Architect |

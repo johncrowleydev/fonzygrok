@@ -214,6 +214,18 @@ documents:
       Merge sprint: both tracks converge. Integration wiring, Docker
       packaging (distroless), comprehensive E2E test suite. v1.0 ship.
 
+  - id: SPR-006
+    path: 05_PROJECT/SPR-006_Custom_Subdomains.md
+    title: "Sprint 006: Custom Subdomains & Readable Names"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.1]
+    agents: [coder]
+    summary: >
+      v1.1 feature sprint: custom --name flag for tunnel subdomains,
+      auto-generated readable names (adjective-noun pairs), server-side
+      validation and reserved-name blacklist.
+
   # ── 10_GOVERNANCE ───────────────────────────────────────────────────────────
   - id: GOV-001
     path: 10_GOVERNANCE/GOV-001_DocumentationStandard.md
