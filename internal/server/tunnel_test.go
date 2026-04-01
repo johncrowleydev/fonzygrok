@@ -115,17 +115,46 @@ func TestRegisterDuplicateNameRejected(t *testing.T) {
 	tm, st := newTestTunnelManager(t)
 	defer st.Close()
 
-	session := &Session{TokenID: "tok_test123456"}
+	session1 := &Session{TokenID: "tok_test123456"}
+	session2 := &Session{TokenID: "tok_other789012"}
 	req := &proto.TunnelRequest{LocalPort: 3000, Protocol: "http", Name: "taken-name"}
 
-	_, err := tm.Register(session, req)
+	_, err := tm.Register(session1, req)
 	if err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
 
-	_, err = tm.Register(session, &proto.TunnelRequest{LocalPort: 3001, Protocol: "http", Name: "taken-name"})
+	// Different token requesting the same name should be rejected.
+	_, err = tm.Register(session2, &proto.TunnelRequest{LocalPort: 3001, Protocol: "http", Name: "taken-name"})
 	if err == nil {
-		t.Fatal("expected error for duplicate name")
+		t.Fatal("expected error for duplicate name from different token")
+	}
+}
+
+func TestRegisterSameTokenReregistration(t *testing.T) {
+	tm, st := newTestTunnelManager(t)
+	defer st.Close()
+
+	session := &Session{TokenID: "tok_test123456"}
+	req := &proto.TunnelRequest{LocalPort: 3000, Protocol: "http", Name: "reconnect-name"}
+
+	a1, err := tm.Register(session, req)
+	if err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+
+	// Same token re-registering same name should succeed (reconnect case).
+	a2, err := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http", Name: "reconnect-name"})
+	if err != nil {
+		t.Fatalf("re-Register same token: %v", err)
+	}
+
+	// Should get a new tunnel ID but same name.
+	if a2.Name != a1.Name {
+		t.Errorf("name changed: got %q, want %q", a2.Name, a1.Name)
+	}
+	if a2.TunnelID == a1.TunnelID {
+		t.Error("expected new tunnel ID on re-registration")
 	}
 }
 

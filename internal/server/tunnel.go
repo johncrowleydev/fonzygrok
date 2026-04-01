@@ -103,10 +103,15 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 			return nil, fmt.Errorf("invalid name: %w", err)
 		}
 		tm.mu.RLock()
-		_, taken := tm.byName[req.Name]
+		existing, taken := tm.byName[req.Name]
 		tm.mu.RUnlock()
 		if taken {
-			return nil, fmt.Errorf("name %q is already in use", req.Name)
+			// Allow re-registration by the same token (handles reconnect race).
+			if existing.Session.TokenID != session.TokenID {
+				return nil, fmt.Errorf("name %q is already in use", req.Name)
+			}
+			// Same token reconnecting — deregister the stale entry first.
+			tm.Deregister(existing.TunnelID)
 		}
 		name = req.Name
 	} else {
