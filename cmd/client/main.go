@@ -37,6 +37,7 @@ func newRootCmd() *cobra.Command {
 		configPath string
 		inspect    string
 		noInspect  bool
+		verbose    bool
 	)
 
 	cmd := &cobra.Command{
@@ -70,7 +71,7 @@ Examples:
 			}
 			merged := config.MergeClientConfig(fileCfg, flagCfg)
 
-			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name, inspect, noInspect)
+			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name, inspect, noInspect, verbose)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -85,6 +86,7 @@ Examples:
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file (auto-detects ~/.fonzygrok.yaml)")
 	cmd.Flags().StringVar(&inspect, "inspect", "localhost:4040", "Inspector web UI listen address")
 	cmd.Flags().BoolVar(&noInspect, "no-inspect", false, "Disable the request inspector")
+	cmd.Flags().BoolVar(&verbose, "verbose", false, "Show JSON structured logs on stdout")
 
 	// Wire up env var defaults. cobra doesn't do this natively.
 	if env := os.Getenv("FONZYGROK_SERVER"); env != "" && serverAddr == "" {
@@ -100,7 +102,7 @@ Examples:
 }
 
 // runTunnel is the core logic: connect, request tunnel, proxy traffic.
-func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string, inspectAddr string, noInspect bool) error {
+func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string, inspectAddr string, noInspect bool, verbose bool) error {
 	// Resolve env vars for server + token if flags were empty.
 	if serverAddr == "" {
 		serverAddr = os.Getenv("FONZYGROK_SERVER")
@@ -125,9 +127,18 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 		serverAddr = serverAddr + ":2222"
 	}
 
+	// Human-friendly output to stderr (per DEF-001 fix).
+	display := client.NewDisplay(os.Stderr)
+
 	// Structured JSON logger per GOV-006 / BLU-001 §7.
+	// Default: Error level (suppresses JSON noise).
+	// --verbose: Debug level (full JSON logs to stdout alongside Display on stderr).
+	logLevel := slog.LevelError
+	if verbose {
+		logLevel = slog.LevelDebug
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: logLevel,
 	}))
 
 	// Context with signal handling for graceful shutdown.
@@ -142,6 +153,10 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 	connector := client.NewConnector(cfg, logger)
 
+	// Banner + starting message via Display.
+	display.Banner(Version)
+	display.Connecting(serverAddr)
+
 	logger.Info("fonzygrok starting",
 		slog.String("version", Version),
 		slog.String("server", serverAddr),
@@ -150,8 +165,10 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 	// Start inspector if enabled.
 	var inspector *client.Inspector
+	var inspectDisplay string
 	if !noInspect {
 		inspector = client.NewInspector(inspectAddr, logger)
+		inspectDisplay = inspectAddr
 		go func() {
 			if err := inspector.Start(ctx); err != nil {
 				logger.Warn("inspector stopped", slog.String("error", err.Error()))
@@ -162,21 +179,25 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 	// ConnectWithRetry handles the full lifecycle:
 	// connect → open control → request tunnel → proxy → reconnect on failure.
 	err := connector.ConnectWithRetry(ctx, func() error {
-		return onConnect(ctx, connector, port, name, inspector, logger)
+		return onConnect(ctx, connector, port, name, inspector, inspectDisplay, display, logger)
 	})
 
 	if err != nil && err != context.Canceled {
+		display.Error(err.Error())
 		logger.Error("client exited with error", slog.String("error", err.Error()))
 		return err
 	}
 
+	display.Shutdown()
 	logger.Info("fonzygrok shutdown complete")
 	return nil
 }
 
 // onConnect is called after each successful SSH connection.
 // It opens the control channel, requests a tunnel, and starts the proxy.
-func onConnect(ctx context.Context, connector *client.Connector, port int, name string, inspector *client.Inspector, logger *slog.Logger) error {
+func onConnect(ctx context.Context, connector *client.Connector, port int, name string, inspector *client.Inspector, inspectAddr string, display *client.Display, logger *slog.Logger) error {
+	display.Connected()
+
 	// Open control channel.
 	cc, err := connector.OpenControl()
 	if err != nil {
@@ -190,16 +211,9 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 		return fmt.Errorf("request tunnel: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "\n  ✔ Tunnel established!\n")
-	if assignment.Name != "" {
-		fmt.Fprintf(os.Stderr, "  ↳ Name: %s\n", assignment.Name)
-	}
-	fmt.Fprintf(os.Stderr, "  ↳ Public URL: %s\n", assignment.PublicURL)
-	fmt.Fprintf(os.Stderr, "  ↳ Forwarding: %s → localhost:%d\n", assignment.PublicURL, port)
-	if inspector != nil {
-		fmt.Fprintf(os.Stderr, "  ↳ Inspector: http://%s\n", inspector.Addr())
-	}
-	fmt.Fprintf(os.Stderr, "\n")
+	// Pretty output via Display (to stderr).
+	display.TunnelEstablished(assignment.Name, assignment.PublicURL, port, inspectAddr)
+	display.Ready()
 
 	logger.Info("tunnel active",
 		slog.String("tunnel_id", assignment.TunnelID),

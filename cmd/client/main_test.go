@@ -276,3 +276,44 @@ func TestRootCmdInspectDefaultValue(t *testing.T) {
 		t.Fatalf("Execute() error: %v", err)
 	}
 }
+
+// TestRootCmdHelpShowsVerboseFlag verifies --help mentions --verbose.
+func TestRootCmdHelpShowsVerboseFlag(t *testing.T) {
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--verbose") {
+		t.Error("help should mention --verbose flag")
+	}
+}
+
+// TestRootCmdVerboseFlagParsed verifies --verbose flag is parsed correctly.
+func TestRootCmdVerboseFlagParsed(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+		"--verbose",
+		"--no-inspect",
+	})
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		v, _ := cmd.Flags().GetBool("verbose")
+		if !v {
+			t.Error("--verbose should be true")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}
