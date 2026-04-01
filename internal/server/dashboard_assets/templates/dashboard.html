@@ -1,0 +1,76 @@
+{{define "content"}}
+<!-- My Tokens -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">My Tokens</h2>
+        <button class="btn btn-primary btn-sm"
+                hx-get="/dashboard/tokens/new"
+                hx-target="#token-create-area"
+                hx-swap="innerHTML">
+            + Create Token
+        </button>
+    </div>
+    <div id="token-create-area"></div>
+    <div id="token-reveal-area"></div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Token ID</th>
+                    <th class="hide-mobile">Created</th>
+                    <th class="hide-mobile">Last Used</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="token-table-body">
+                {{if .Tokens}}
+                    {{range .Tokens}}
+                    <tr id="token-row-{{.ID}}">
+                        <td>{{.Name}}</td>
+                        <td><code class="mono">{{.ID}}</code></td>
+                        <td class="hide-mobile">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+                        <td class="hide-mobile">
+                            {{if .LastUsedAt}}{{.LastUsedAt.Format "Jan 02, 15:04"}}{{else}}<span style="color:var(--text-muted)">Never</span>{{end}}
+                        </td>
+                        <td>
+                            {{if .IsActive}}<span class="badge badge-active">Active</span>
+                            {{else}}<span class="badge badge-revoked">Revoked</span>{{end}}
+                        </td>
+                        <td>
+                            {{if .IsActive}}
+                            <button class="btn btn-danger btn-sm"
+                                    hx-delete="/dashboard/tokens/{{.ID}}"
+                                    hx-target="#token-row-{{.ID}}"
+                                    hx-swap="outerHTML"
+                                    hx-confirm="Revoke token '{{.Name}}'?">
+                                Revoke
+                            </button>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                {{else}}
+                <tr><td colspan="6" class="empty">No tokens yet. Create one to connect your client.</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Active Tunnels -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Active Tunnels</h2>
+        <span class="htmx-indicator">Refreshing…</span>
+    </div>
+    <div class="table-wrap"
+         hx-get="/dashboard/tunnels"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML"
+         hx-indicator=".htmx-indicator">
+        <!-- populated via HTMX -->
+    </div>
+</div>
+{{end}}

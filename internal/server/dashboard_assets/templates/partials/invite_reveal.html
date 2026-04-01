@@ -1,0 +1,8 @@
+<div class="token-reveal">
+    <p>New invite code generated:</p>
+    <div class="copy-wrap" style="margin-top:0.5rem;font-size:1.1rem">
+        <span id="new-invite-text">{{.Code}}</span>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('{{.Code}}');this.textContent='✔';this.classList.add('copied');setTimeout(()=>{this.textContent='📋';this.classList.remove('copied')},2000)" title="Copy code">📋</button>
+    </div>
+    <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-muted)">Share this code with the person you want to invite.</p>
+</div>

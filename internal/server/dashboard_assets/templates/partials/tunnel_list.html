@@ -1,0 +1,32 @@
+{{if .Tunnels}}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Public URL</th>
+            <th class="hide-mobile">Local Port</th>
+            <th class="hide-mobile">Connected</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Tunnels}}
+        <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td>
+                <span class="copy-wrap">
+                    <a href="{{.PublicURL}}" target="_blank" class="mono">{{.PublicURL}}</a>
+                    <button class="copy-btn" onclick="navigator.clipboard.writeText('{{.PublicURL}}');this.textContent='✔';this.classList.add('copied');setTimeout(()=>{this.textContent='📋';this.classList.remove('copied')},2000)" title="Copy URL">📋</button>
+                </span>
+            </td>
+            <td class="hide-mobile">{{.LocalPort}}</td>
+            <td class="hide-mobile">{{.ConnectedAt}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="empty">
+    No active tunnels.
+    <code>fonzygrok --server your-server.com --token fgk_... --port 3000</code>
+</div>
+{{end}}

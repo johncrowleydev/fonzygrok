@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Users</h2>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th class="hide-mobile">Created</th>
+                    <th class="hide-mobile">Last Login</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{if .Users}}
+                    {{range .Users}}
+                    <tr>
+                        <td><strong>{{.Username}}</strong></td>
+                        <td class="mono">{{.Email}}</td>
+                        <td>
+                            {{if eq .Role "admin"}}<span class="badge badge-admin">Admin</span>
+                            {{else}}<span class="badge badge-active">User</span>{{end}}
+                        </td>
+                        <td class="hide-mobile">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+                        <td class="hide-mobile">
+                            {{if .LastLoginAt}}{{.LastLoginAt.Format "Jan 02, 15:04"}}{{else}}<span style="color:var(--text-muted)">Never</span>{{end}}
+                        </td>
+                        <td>
+                            {{if .IsActive}}<span class="badge badge-active">Active</span>
+                            {{else}}<span class="badge badge-revoked">Disabled</span>{{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                {{else}}
+                <tr><td colspan="6" class="empty">No users registered.</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}

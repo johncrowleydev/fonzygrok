@@ -29,6 +29,7 @@ type AdminAPI struct {
 	sshServer *SSHServer
 	logger    *slog.Logger
 	server    *http.Server
+	mux       *http.ServeMux
 	startTime time.Time
 }
 
@@ -46,30 +47,30 @@ func NewAdminAPI(config AdminConfig, st *store.Store, tunnels *TunnelManager, ss
 		startTime: time.Now().UTC(),
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/health", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux = http.NewServeMux()
+	a.mux.HandleFunc("/api/v1/health", a.methodRoute(map[string]http.HandlerFunc{
 		"GET": a.handleHealth,
 	}))
-	mux.HandleFunc("/api/v1/tokens", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/tokens", a.methodRoute(map[string]http.HandlerFunc{
 		"GET":  a.handleListTokens,
 		"POST": a.handleCreateToken,
 	}))
-	mux.HandleFunc("/api/v1/tokens/", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/tokens/", a.methodRoute(map[string]http.HandlerFunc{
 		"DELETE": a.handleDeleteToken,
 	}))
-	mux.HandleFunc("/api/v1/tunnels", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/tunnels", a.methodRoute(map[string]http.HandlerFunc{
 		"GET": a.handleListTunnels,
 	}))
-	mux.HandleFunc("/api/v1/tunnels/", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/tunnels/", a.methodRoute(map[string]http.HandlerFunc{
 		"DELETE": a.handleDeleteTunnel,
 	}))
-	mux.HandleFunc("/api/v1/metrics", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/metrics", a.methodRoute(map[string]http.HandlerFunc{
 		"GET": a.handleMetrics,
 	}))
 
 	a.server = &http.Server{
 		Addr:    config.Addr,
-		Handler: mux,
+		Handler: a.mux,
 	}
 
 	return a
@@ -105,6 +106,12 @@ func (a *AdminAPI) Stop() error {
 // Handler returns the http.Handler for testing.
 func (a *AdminAPI) Handler() http.Handler {
 	return a.server.Handler
+}
+
+// Mux returns the underlying ServeMux for registering additional routes
+// (e.g., the dashboard UI).
+func (a *AdminAPI) Mux() *http.ServeMux {
+	return a.mux
 }
 
 // --- Route helpers ---
