@@ -1,84 +1,354 @@
 # Fonzygrok
 
-A self-hosted ngrok alternative built in Go. Expose local services to the internet through secure SSH tunnels.
+A self-hosted [ngrok](https://ngrok.com) alternative. Expose local services to the internet through secure SSH tunnels.
 
-## Overview
+## What is Fonzygrok?
 
-Fonzygrok consists of two binaries:
+Fonzygrok lets you share a local web server with the internet by creating a public URL that tunnels HTTP traffic to your machine. It's useful for webhook development, mobile testing, demoing local apps, and sharing work-in-progress without deploying.
 
-- **fonzygrok-server** — Accepts SSH connections from clients, manages tunnels, and routes public HTTP traffic to the correct client through SSH channels.
-- **fonzygrok** (client) — Connects to a fonzygrok server, authenticates with a token, and proxies incoming requests to a local service.
-
-## Architecture
+Unlike managed services, you control the entire stack. Run the server on your own infrastructure, issue your own tokens, and keep your traffic on your network.
 
 ```
-Internet → HTTP Edge (:8080) → Tunnel Manager → SSH Channel → Client → localhost:PORT
-```
-
-- **SSH Listener** (:2222) — Accepts client connections, authenticates via token
-- **HTTP Edge Router** (:8080) — Routes public HTTP requests by subdomain to the right tunnel
-- **Admin API** (:9090) — REST API for token management and tunnel inspection
-- **SQLite Store** — Persists tokens, tunnel metadata, and connection logs
-
-## Prerequisites
-
-- Go 1.21+
-- SQLite3 (via `modernc.org/sqlite` — pure Go, no CGo)
-
-## Build
-
-```bash
-# Build both binaries
-make build
-
-# Build only server
-make build-server
-
-# Build only client
-make build-client
-
-# Run tests
-make test
-
-# Run linter
-make lint
+                         ┌─────────────────────────────────────┐
+                         │          Your Server (VPS)          │
+   Internet              │                                     │
+   ────────────►  :443   │  HTTP Edge ──► Tunnel Manager       │
+   browser hits           │       │              │              │
+   my-app.tunnel.         │       ▼              ▼              │
+   yourdomain.com        │  Route by     SSH Channel ◄──────── │ :2222
+                         │  subdomain         │                │
+                         └────────────────────│────────────────┘
+                                              │  SSH tunnel
+                                              ▼
+                                     ┌────────────────┐
+                                     │  Your Laptop   │
+                                     │  fonzygrok     │
+                                     │  client        │
+                                     │       │        │
+                                     │       ▼        │
+                                     │  localhost:3000 │
+                                     └────────────────┘
 ```
 
 ## Quick Start
 
-### 1. Start the Server
+```bash
+# 1. Download the client
+curl -LO https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-linux-amd64
+chmod +x fonzygrok-linux-amd64
+
+# 2. Get a token from your server admin
+
+# 3. Connect
+./fonzygrok-linux-amd64 --server fonzygrok.com --token fgk_your_token --port 3000
+```
+
+Output:
+
+```
+fonzygrok v1.1.0
+
+  Connecting to fonzygrok.com:2222...
+  ✔ Connected!
+
+  ✔ Tunnel established!
+    ↳ Name:       laughing-panda
+    ↳ Public URL: https://laughing-panda.tunnel.fonzygrok.com
+    ↳ Forwarding: https://laughing-panda.tunnel.fonzygrok.com → localhost:3000
+    ↳ Inspector:  http://localhost:4040
+
+  Press Ctrl+C to stop.
+```
+
+Your local service on port 3000 is now accessible at the public URL.
+
+---
+
+## Installation
+
+### Download Binary (Recommended)
+
+Download the latest release for your platform:
+
+| Platform | Download |
+|:---------|:---------|
+| Linux (amd64) | [fonzygrok-linux-amd64](https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-linux-amd64) |
+| Linux (arm64) | [fonzygrok-linux-arm64](https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-linux-arm64) |
+| macOS (Intel) | [fonzygrok-darwin-amd64](https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-darwin-amd64) |
+| macOS (Apple Silicon) | [fonzygrok-darwin-arm64](https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-darwin-arm64) |
+| Windows (amd64) | [fonzygrok-windows-amd64.exe](https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-windows-amd64.exe) |
 
 ```bash
+# Linux / macOS
+chmod +x fonzygrok-*
+sudo mv fonzygrok-* /usr/local/bin/fonzygrok
+```
+
+### Build from Source
+
+Requires Go 1.21+.
+
+```bash
+git clone https://github.com/johncrowleydev/fonzygrok.git
+cd fonzygrok
+go build -o fonzygrok ./cmd/client/
+go build -o fonzygrok-server ./cmd/server/
+```
+
+---
+
+## Client Usage
+
+### Connecting
+
+```bash
+fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000
+```
+
+The `--server` flag accepts a domain or `host:port`. If no port is specified, `:2222` is appended automatically.
+
+### Custom Subdomains
+
+Use `--name` to request a specific subdomain:
+
+```bash
+fonzygrok --server fonzygrok.com --token fgk_abc123 --port 8080 --name my-api
+```
+
+```
+  ✔ Tunnel established!
+    ↳ Name:       my-api
+    ↳ Public URL: https://my-api.tunnel.fonzygrok.com
+    ↳ Forwarding: https://my-api.tunnel.fonzygrok.com → localhost:8080
+```
+
+If the name is already taken, the server assigns a random name instead.
+
+### Request Inspector
+
+Every tunnel starts a local web UI at [http://localhost:4040](http://localhost:4040) where you can see all requests flowing through your tunnel in real time. The inspector shows:
+
+- Method, path, status code, and duration for each request
+- Request and response headers
+- Body preview (first 1KB)
+- Live streaming via SSE — new requests appear instantly
+
+Disable it with `--no-inspect`, or change the address with `--inspect 127.0.0.1:5050`.
+
+### Config File
+
+Instead of passing flags every time, create `~/.fonzygrok.yaml`:
+
+```yaml
+server: fonzygrok.com
+token: fgk_your_token_here
+port: 3000
+name: my-api
+insecure: false
+```
+
+The client auto-detects `./fonzygrok.yaml` and `~/.fonzygrok.yaml`. Override with `--config /path/to/file.yaml`. CLI flags always take precedence over config file values.
+
+### Verbose Mode
+
+By default, the client shows human-friendly messages on stderr and suppresses JSON logs. To see structured JSON logs on stdout (useful for piping to log aggregators):
+
+```bash
+fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000 --verbose
+```
+
+Both streams are active simultaneously — Display output on stderr, JSON on stdout.
+
+### Environment Variables
+
+| Variable | Equivalent Flag |
+|:---------|:----------------|
+| `FONZYGROK_SERVER` | `--server` |
+| `FONZYGROK_TOKEN` | `--token` |
+
+```bash
+export FONZYGROK_SERVER=fonzygrok.com
+export FONZYGROK_TOKEN=fgk_abc123
+fonzygrok --port 3000
+```
+
+### Complete Flag Reference
+
+| Flag | Default | Description |
+|:-----|:--------|:------------|
+| `--server` | — | Server address (domain or host:port) |
+| `--token` | — | API token for authentication |
+| `--port` | — | Local port to expose (**required**) |
+| `--name` | (auto) | Custom subdomain name |
+| `--config` | (auto-detect) | Path to YAML config file |
+| `--inspect` | `localhost:4040` | Inspector web UI listen address |
+| `--no-inspect` | `false` | Disable the request inspector |
+| `--verbose` | `false` | Show JSON structured logs on stdout |
+| `--insecure` | `false` | Skip SSH host key verification |
+| `--version` | — | Print version and exit |
+
+---
+
+## Self-Hosting
+
+### Prerequisites
+
+- **A domain** with wildcard DNS: `*.tunnel.yourdomain.com` → your server IP
+- **A server** (VPS, EC2, etc.) with ports open:
+  - `2222` — SSH tunnel connections
+  - `80` / `443` — Public HTTP/HTTPS traffic
+  - `9090` — Admin API (bind to localhost or private network)
+- **Docker** and **Docker Compose**
+
+### Docker Deployment
+
+```bash
+git clone https://github.com/johncrowleydev/fonzygrok.git
+cd fonzygrok/docker
+
 cp .env.example .env
-# Edit .env with your domain and port settings
-
-./fonzygrok-server
 ```
 
-### 2. Create a Token
+Edit `.env`:
+
+```env
+DOMAIN=tunnel.yourdomain.com
+TLS_ENABLED=true
+SSH_PORT=2222
+HTTP_PORT=80
+HTTPS_PORT=443
+ADMIN_PORT=9090
+```
+
+Start the server:
 
 ```bash
-curl -X POST http://localhost:9090/api/v1/tokens -d '{"name":"dev-laptop"}'
-# Save the returned token — it is only shown once
+docker compose up -d
 ```
 
-### 3. Connect a Client
+### TLS / HTTPS Setup
+
+Set `TLS_ENABLED=true` in `.env`. The server automatically provisions certificates from Let's Encrypt for your domain and all tunnel subdomains. Ensure ports 80 and 443 are open and reachable.
+
+When TLS is enabled:
+- HTTPS listens on `:443`
+- HTTP on `:80` redirects to HTTPS
+- Certificates are cached in the `fonzygrok-certs` Docker volume
+
+### Token Management
+
+Create tokens for your users via the admin API or CLI:
 
 ```bash
-./fonzygrok --server your-server.com --token fgk_... --port 3000
-# Your local service on port 3000 is now accessible at:
-# http://<tunnel-id>.tunnel.example.com
+# Via CLI (inside the container)
+docker exec fonzygrok-server fonzygrok-server token create --name "dev-laptop" --data-dir /data
+
+# Via admin API
+curl -s http://localhost:9090/api/v1/tokens -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"name": "dev-laptop"}'
 ```
 
-## Configuration
+List and revoke tokens:
 
-| Environment Variable | Default | Description |
-|:---------------------|:--------|:------------|
-| `FONZYGROK_DATA_DIR` | `/data` | Directory for SQLite database and host keys |
-| `FONZYGROK_DOMAIN` | `tunnel.example.com` | Base domain for tunnel subdomains |
-| `FONZYGROK_SSH_ADDR` | `:2222` | SSH listener address |
-| `FONZYGROK_HTTP_ADDR` | `:8080` | HTTP edge router address |
-| `FONZYGROK_ADMIN_ADDR` | `:9090` | Admin API address |
+```bash
+# List
+docker exec fonzygrok-server fonzygrok-server token list --data-dir /data
+
+# Revoke
+docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --data-dir /data
+```
+
+> **Note:** Tokens are shown in full only at creation time. Store them securely.
+
+### Server Configuration Reference
+
+#### Serve Command Flags
+
+| Flag | Default | Description |
+|:-----|:--------|:------------|
+| `--data-dir` | `./data` | Directory for database and SSH host key |
+| `--domain` | `tunnel.localhost` | Base domain for subdomain routing |
+| `--ssh-addr` | `:2222` | SSH listener address |
+| `--http-addr` | `:8080` | HTTP edge router address |
+| `--admin-addr` | `127.0.0.1:9090` | Admin API listen address |
+| `--tls` | `false` | Enable auto-TLS via Let's Encrypt |
+| `--tls-cert-dir` | `<data-dir>/certs` | TLS certificate cache directory |
+| `--config` | — | Path to YAML config file |
+
+#### Docker Environment Variables
+
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `DOMAIN` | `tunnel.localhost` | Base domain for tunnel routing |
+| `TLS_ENABLED` | `false` | Enable HTTPS with Let's Encrypt |
+| `SSH_PORT` | `2222` | Host port for SSH connections |
+| `HTTP_PORT` | `8080` | Host port for HTTP traffic |
+| `HTTPS_PORT` | `443` | Host port for HTTPS traffic |
+| `ADMIN_PORT` | `9090` | Host port for admin API |
+
+### Architecture
+
+```
+                    ┌───────────────────────────────────────────┐
+                    │            fonzygrok-server               │
+                    │                                           │
+  :2222 ───────────►│  SSH Listener                             │
+  (client connects) │    ├── Auth (token validation via SQLite) │
+                    │    ├── Control Channel (tunnel register)  │
+                    │    └── Proxy Channels (HTTP relay)        │
+                    │                                           │
+  :443 ────────────►│  HTTP Edge Router                         │
+  (public traffic)  │    ├── Subdomain extraction               │
+                    │    ├── Tunnel lookup                      │
+                    │    └── Proxy via SSH channel               │
+                    │                                           │
+  :9090 ───────────►│  Admin API                                │
+  (management)      │    ├── Token CRUD                         │
+                    │    ├── Tunnel listing                     │
+                    │    └── Health check                       │
+                    │                                           │
+                    │  SQLite Store (/data/fonzygrok.db)        │
+                    │    ├── Tokens                             │
+                    │    └── Connection metadata                │
+                    └───────────────────────────────────────────┘
+```
+
+---
+
+## Troubleshooting
+
+### "missing port in address"
+
+The `--server` flag now auto-appends `:2222` if no port is specified. Make sure you're running the latest client version. If you see this error, update your binary.
+
+### "connection refused"
+
+- Verify the server is running: `curl http://your-server:9090/api/v1/health`
+- Check that port `2222` is open in your firewall / security group
+- Try `--insecure` if you haven't set up host key verification
+
+### "tunnel not found" (404 in browser)
+
+- Verify wildcard DNS is configured: `*.tunnel.yourdomain.com → your server IP`
+- Check the tunnel is active: `curl http://your-server:9090/api/v1/tunnels`
+- The subdomain in the URL must match the tunnel name exactly
+
+### Inspector not loading
+
+- Open [http://localhost:4040](http://localhost:4040) in your browser
+- If port 4040 is already in use, set a different address: `--inspect 127.0.0.1:5050`
+- Disable with `--no-inspect` if you don't need it
+
+### "unexpected EOF" on proxy requests
+
+This is a known issue when running client and server on different machines over the internet. See [DEF-003](CODEX/50_DEFECTS/DEF-003_Proxy_EOF_Over_Internet.md). A fix is in progress.
+
+### Client shows raw JSON instead of pretty output
+
+Update to the latest client version. Versions prior to v1.1.1 output raw JSON logs. The current version shows human-friendly formatted output by default.
+
+---
 
 ## License
 
