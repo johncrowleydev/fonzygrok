@@ -228,3 +228,51 @@ func TestRootCmdConfigFileInvalidYAML(t *testing.T) {
 		t.Errorf("error should contain 'config: parse', got: %v", execErr)
 	}
 }
+
+// TestRootCmdHelpShowsInspectFlags verifies --help mentions --inspect and --no-inspect.
+func TestRootCmdHelpShowsInspectFlags(t *testing.T) {
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--inspect") {
+		t.Error("help should mention --inspect flag")
+	}
+	if !strings.Contains(out, "--no-inspect") {
+		t.Error("help should mention --no-inspect flag")
+	}
+}
+
+// TestRootCmdInspectDefaultValue verifies --inspect defaults to localhost:4040.
+func TestRootCmdInspectDefaultValue(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+		"--no-inspect",
+	})
+
+	// Override RunE to capture flag values.
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		inspect, _ := cmd.Flags().GetString("inspect")
+		if inspect != "localhost:4040" {
+			t.Errorf("inspect default = %q, want %q", inspect, "localhost:4040")
+		}
+		noInspect, _ := cmd.Flags().GetBool("no-inspect")
+		if !noInspect {
+			t.Error("--no-inspect should be true")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}
