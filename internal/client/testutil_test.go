@@ -155,11 +155,17 @@ func (s *testSSHServer) handleControlChannel(newCh ssh.NewChannel) {
 				continue
 			}
 			// Respond with a canned assignment.
+			// Echo back the requested name, or use a default.
+			name := req.Name
+			if name == "" {
+				name = "test01"
+			}
 			assignment := proto.TunnelAssignment{
 				TunnelID:          "test01",
-				AssignedSubdomain: "test01",
-				PublicURL:         "http://test01.tunnel.example.com",
+				AssignedSubdomain: name,
+				PublicURL:         "http://" + name + ".tunnel.example.com",
 				Protocol:          req.Protocol,
+				Name:              name,
 			}
 			resp, _ := proto.WrapPayload(proto.TypeTunnelAssignment, assignment)
 			if err := encoder.Encode(resp); err != nil {

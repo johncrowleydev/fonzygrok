@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestRootCmdVersion verifies that --version prints the version string.
@@ -102,3 +104,55 @@ func TestRootCmdMissingToken(t *testing.T) {
 		t.Fatal("expected error for missing --token")
 	}
 }
+
+// TestRootCmdHelpShowsNameFlag verifies that --help mentions the --name flag.
+func TestRootCmdHelpShowsNameFlag(t *testing.T) {
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--name") {
+		t.Error("help should mention --name flag")
+	}
+	if !strings.Contains(out, "Custom subdomain") {
+		t.Error("help should describe --name as 'Custom subdomain'")
+	}
+	if !strings.Contains(out, "--name my-api") {
+		t.Error("help examples should include --name usage")
+	}
+}
+
+// TestRootCmdNameFlagParsed verifies that --name is accepted as a valid flag
+// and its value is correctly parsed.
+func TestRootCmdNameFlagParsed(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+		"--name", "my-api",
+	})
+
+	// Override RunE to avoid actually connecting — we only care about flag parsing.
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		val, err := cmd.Flags().GetString("name")
+		if err != nil {
+			t.Fatalf("GetString(\"name\") error: %v", err)
+		}
+		if val != "my-api" {
+			t.Errorf("--name = %q, want %q", val, "my-api")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}
+
