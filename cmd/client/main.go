@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/fonzygrok/fonzygrok/internal/client"
+	"github.com/fonzygrok/fonzygrok/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +33,7 @@ func newRootCmd() *cobra.Command {
 		port       int
 		insecure   bool
 		name       string
+		configPath string
 	)
 
 	cmd := &cobra.Command{
@@ -48,7 +50,24 @@ Examples:
   FONZYGROK_SERVER=tunnel.example.com:2222 FONZYGROK_TOKEN=fgk_xxx fonzygrok --port 3000`,
 		Version: Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTunnel(cmd.Context(), serverAddr, token, port, insecure, name)
+			// Resolve config file: explicit > ./fonzygrok.yaml > ~/.fonzygrok.yaml
+			cfgPath := config.ResolveClientConfigPath(configPath)
+			fileCfg, err := config.LoadClientConfig(cfgPath)
+			if err != nil {
+				return err
+			}
+
+			// Merge: file values as defaults, flags override.
+			flagCfg := &config.ClientConfig{
+				Server:   serverAddr,
+				Token:    token,
+				Port:     port,
+				Name:     name,
+				Insecure: insecure,
+			}
+			merged := config.MergeClientConfig(fileCfg, flagCfg)
+
+			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -60,6 +79,7 @@ Examples:
 	cmd.Flags().IntVar(&port, "port", 0, "Local port to expose (required)")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip host key verification")
 	cmd.Flags().StringVar(&name, "name", "", "Custom subdomain name for the tunnel URL")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file (auto-detects ~/.fonzygrok.yaml)")
 
 	// Wire up env var defaults. cobra doesn't do this natively.
 	if env := os.Getenv("FONZYGROK_SERVER"); env != "" && serverAddr == "" {
