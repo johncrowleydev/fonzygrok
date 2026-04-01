@@ -42,9 +42,10 @@ func TestTunnelRequestOmitEmptySubdomain(t *testing.T) {
 func TestTunnelAssignmentRoundTrip(t *testing.T) {
 	orig := TunnelAssignment{
 		TunnelID:          "a3f8x2",
-		AssignedSubdomain: "a3f8x2",
-		PublicURL:         "http://a3f8x2.tunnel.example.com",
+		AssignedSubdomain: "calm-tiger",
+		PublicURL:         "http://calm-tiger.tunnel.example.com",
 		Protocol:          "http",
+		Name:              "calm-tiger",
 	}
 	data, err := json.Marshal(orig)
 	if err != nil {
@@ -149,9 +150,10 @@ func TestTunnelRequestJSONTags(t *testing.T) {
 func TestTunnelAssignmentJSONTags(t *testing.T) {
 	a := TunnelAssignment{
 		TunnelID:          "abc",
-		AssignedSubdomain: "abc",
-		PublicURL:         "http://abc.example.com",
+		AssignedSubdomain: "calm-tiger",
+		PublicURL:         "http://calm-tiger.example.com",
 		Protocol:          "http",
+		Name:              "calm-tiger",
 	}
 	data, err := json.Marshal(a)
 	if err != nil {
@@ -161,10 +163,58 @@ func TestTunnelAssignmentJSONTags(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatalf("unmarshal to map: %v", err)
 	}
-	expected := []string{"tunnel_id", "assigned_subdomain", "public_url", "protocol"}
+	expected := []string{"tunnel_id", "assigned_subdomain", "public_url", "protocol", "name"}
 	for _, key := range expected {
 		if _, ok := m[key]; !ok {
 			t.Errorf("missing JSON key %q", key)
 		}
+	}
+}
+
+// TestBackwardCompatNoName verifies that a request without the Name field
+// unmarshals cleanly with Name as empty string (backward compat with old clients).
+func TestBackwardCompatNoName(t *testing.T) {
+	// Simulate an old client that doesn't send Name.
+	oldJSON := `{"local_port":3000,"protocol":"http"}`
+	var req TunnelRequest
+	if err := json.Unmarshal([]byte(oldJSON), &req); err != nil {
+		t.Fatalf("unmarshal old request: %v", err)
+	}
+	if req.LocalPort != 3000 {
+		t.Errorf("local_port: got %d, want 3000", req.LocalPort)
+	}
+	if req.Protocol != "http" {
+		t.Errorf("protocol: got %q, want %q", req.Protocol, "http")
+	}
+	if req.Name != "" {
+		t.Errorf("name: got %q, want empty string", req.Name)
+	}
+}
+
+// TestNameOmittedWhenEmpty verifies Name is omitted from JSON when empty.
+func TestNameOmittedWhenEmpty(t *testing.T) {
+	req := TunnelRequest{LocalPort: 8080, Protocol: "http"}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	m := make(map[string]interface{})
+	json.Unmarshal(data, &m)
+	if _, ok := m["name"]; ok {
+		t.Error("expected 'name' to be omitted when empty")
+	}
+}
+
+// TestNameIncludedWhenSet verifies Name is included in JSON when set.
+func TestNameIncludedWhenSet(t *testing.T) {
+	req := TunnelRequest{LocalPort: 8080, Protocol: "http", Name: "my-api"}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	m := make(map[string]interface{})
+	json.Unmarshal(data, &m)
+	if m["name"] != "my-api" {
+		t.Errorf("name: got %v, want %q", m["name"], "my-api")
 	}
 }

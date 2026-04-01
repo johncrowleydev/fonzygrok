@@ -257,6 +257,7 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 
 	type tunnelResp struct {
 		TunnelID    string `json:"tunnel_id"`
+		Name        string `json:"name"`
 		Subdomain   string `json:"subdomain"`
 		PublicURL   string `json:"public_url"`
 		Protocol    string `json:"protocol"`
@@ -270,6 +271,7 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range active {
 		item := tunnelResp{
 			TunnelID:    entry.TunnelID,
+			Name:        entry.Name,
 			Subdomain:   entry.Subdomain,
 			PublicURL:   entry.PublicURL,
 			Protocol:    entry.Protocol,

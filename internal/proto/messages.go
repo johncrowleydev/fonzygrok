@@ -25,6 +25,7 @@ type TunnelRequest struct {
 	LocalPort int    `json:"local_port"`
 	Protocol  string `json:"protocol"`
 	Subdomain string `json:"subdomain,omitempty"`
+	Name      string `json:"name,omitempty"` // optional user-specified subdomain name
 }
 
 // TunnelAssignment is sent by the server after a successful tunnel setup.
@@ -33,6 +34,7 @@ type TunnelAssignment struct {
 	AssignedSubdomain string `json:"assigned_subdomain"`
 	PublicURL         string `json:"public_url"`
 	Protocol          string `json:"protocol"`
+	Name              string `json:"name"` // subdomain name (user-specified or auto-generated)
 }
 
 // TunnelClose is sent by either side to close a tunnel.

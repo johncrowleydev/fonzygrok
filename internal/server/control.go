@@ -159,6 +159,7 @@ func (h *ControlHandler) handleTunnelRequest(msg *proto.ControlMessage, encoder 
 
 	h.logger.Info("ssh: tunnel registered",
 		"tunnel_id", assignment.TunnelID,
+		"name", assignment.Name,
 		"subdomain", assignment.AssignedSubdomain,
 		"local_port", req.LocalPort,
 		"token_id", h.session.TokenID,

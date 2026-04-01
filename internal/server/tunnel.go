@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fonzygrok/fonzygrok/internal/names"
 	"github.com/fonzygrok/fonzygrok/internal/proto"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 	"golang.org/x/crypto/ssh"
@@ -25,7 +26,9 @@ const (
 type TunnelEntry struct {
 	// TunnelID is the unique identifier for this tunnel.
 	TunnelID string
-	// Subdomain is the assigned subdomain for HTTP routing.
+	// Name is the human-friendly subdomain name (user-specified or auto-generated).
+	Name string
+	// Subdomain is the assigned subdomain for HTTP routing (set to Name).
 	Subdomain string
 	// PublicURL is the full public URL for this tunnel.
 	PublicURL string
@@ -47,9 +50,10 @@ type TunnelManager struct {
 	store   *store.Store
 	logger  *slog.Logger
 
-	mu      sync.RWMutex
-	tunnels map[string]*TunnelEntry         // tunnelID → entry
-	bySession map[*Session]map[string]bool  // session → set of tunnelIDs
+	mu        sync.RWMutex
+	tunnels   map[string]*TunnelEntry         // tunnelID → entry
+	byName    map[string]*TunnelEntry         // name/subdomain → entry
+	bySession map[*Session]map[string]bool    // session → set of tunnelIDs
 }
 
 // NewTunnelManager creates a new TunnelManager.
@@ -59,11 +63,14 @@ func NewTunnelManager(domain string, st *store.Store, logger *slog.Logger) *Tunn
 		store:     st,
 		logger:    logger,
 		tunnels:   make(map[string]*TunnelEntry),
+		byName:    make(map[string]*TunnelEntry),
 		bySession: make(map[*Session]map[string]bool),
 	}
 }
 
 // Register creates a new tunnel for the given session and request.
+// If req.Name is provided, it is validated and checked for uniqueness.
+// If req.Name is empty, a human-friendly name is auto-generated.
 // Returns a TunnelAssignment per CON-001 §4.3.
 func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*proto.TunnelAssignment, error) {
 	if req.Protocol != "http" {
@@ -78,11 +85,36 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 		return nil, err
 	}
 
-	subdomain := tunnelID
+	// Resolve subdomain name.
+	var name string
+	if req.Name != "" {
+		// User-specified name: validate and check uniqueness.
+		if err := names.Validate(req.Name); err != nil {
+			return nil, fmt.Errorf("invalid name: %w", err)
+		}
+		tm.mu.RLock()
+		_, taken := tm.byName[req.Name]
+		tm.mu.RUnlock()
+		if taken {
+			return nil, fmt.Errorf("name %q is already in use", req.Name)
+		}
+		name = req.Name
+	} else {
+		// Auto-generate a unique readable name.
+		name = names.GenerateUnique(func(n string) bool {
+			tm.mu.RLock()
+			_, exists := tm.byName[n]
+			tm.mu.RUnlock()
+			return exists
+		})
+	}
+
+	subdomain := name
 	publicURL := fmt.Sprintf("http://%s.%s", subdomain, tm.domain)
 
 	entry := &TunnelEntry{
 		TunnelID:  tunnelID,
+		Name:      name,
 		Subdomain: subdomain,
 		PublicURL: publicURL,
 		Protocol:  req.Protocol,
@@ -93,6 +125,7 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 
 	tm.mu.Lock()
 	tm.tunnels[tunnelID] = entry
+	tm.byName[name] = entry
 	if tm.bySession[session] == nil {
 		tm.bySession[session] = make(map[string]bool)
 	}
@@ -101,6 +134,7 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 
 	tm.logger.Info("tunnel: registered",
 		"tunnel_id", tunnelID,
+		"name", name,
 		"subdomain", subdomain,
 		"local_port", req.LocalPort,
 		"token_id", session.TokenID,
@@ -111,14 +145,27 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 		AssignedSubdomain: subdomain,
 		PublicURL:         publicURL,
 		Protocol:          req.Protocol,
+		Name:              name,
 	}, nil
 }
 
-// Lookup returns the TunnelEntry for the given tunnel ID.
-func (tm *TunnelManager) Lookup(tunnelID string) (*TunnelEntry, bool) {
+// Lookup returns the TunnelEntry for the given tunnel ID or subdomain name.
+// It first checks the tunnelID index, then falls back to the name index.
+func (tm *TunnelManager) Lookup(key string) (*TunnelEntry, bool) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	entry, ok := tm.tunnels[tunnelID]
+	if entry, ok := tm.tunnels[key]; ok {
+		return entry, ok
+	}
+	entry, ok := tm.byName[key]
+	return entry, ok
+}
+
+// LookupByName returns the TunnelEntry for the given subdomain name.
+func (tm *TunnelManager) LookupByName(name string) (*TunnelEntry, bool) {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	entry, ok := tm.byName[name]
 	return entry, ok
 }
 
@@ -133,6 +180,10 @@ func (tm *TunnelManager) Deregister(tunnelID string) {
 	}
 
 	delete(tm.tunnels, tunnelID)
+	// Remove from byName index.
+	if entry.Name != "" {
+		delete(tm.byName, entry.Name)
+	}
 	if sessionTunnels, ok := tm.bySession[entry.Session]; ok {
 		delete(sessionTunnels, tunnelID)
 		if len(sessionTunnels) == 0 {
@@ -140,7 +191,7 @@ func (tm *TunnelManager) Deregister(tunnelID string) {
 		}
 	}
 
-	tm.logger.Info("tunnel: deregistered", "tunnel_id", tunnelID)
+	tm.logger.Info("tunnel: deregistered", "tunnel_id", tunnelID, "name", entry.Name)
 }
 
 // DeregisterBySession removes all tunnels owned by the given session.
@@ -155,7 +206,12 @@ func (tm *TunnelManager) DeregisterBySession(session *Session) {
 	}
 
 	for id := range tunnelIDs {
-		delete(tm.tunnels, id)
+		if entry, ok := tm.tunnels[id]; ok {
+			if entry.Name != "" {
+				delete(tm.byName, entry.Name)
+			}
+			delete(tm.tunnels, id)
+		}
 		tm.logger.Info("tunnel: deregistered (session cleanup)", "tunnel_id", id)
 	}
 	delete(tm.bySession, session)
