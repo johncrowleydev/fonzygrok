@@ -31,6 +31,7 @@ func newRootCmd() *cobra.Command {
 		token      string
 		port       int
 		insecure   bool
+		name       string
 	)
 
 	cmd := &cobra.Command{
@@ -42,11 +43,12 @@ traffic to a local port on your machine.
 
 Examples:
   fonzygrok --server tunnel.example.com:2222 --token fgk_xxx --port 3000
+  fonzygrok --server localhost:2222 --token fgk_xxx --port 8080 --name my-api
   fonzygrok --server localhost:2222 --token fgk_xxx --port 8080 --insecure
   FONZYGROK_SERVER=tunnel.example.com:2222 FONZYGROK_TOKEN=fgk_xxx fonzygrok --port 3000`,
 		Version: Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTunnel(cmd.Context(), serverAddr, token, port, insecure)
+			return runTunnel(cmd.Context(), serverAddr, token, port, insecure, name)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -57,6 +59,7 @@ Examples:
 	cmd.Flags().StringVar(&token, "token", "", "API token for authentication [$FONZYGROK_TOKEN]")
 	cmd.Flags().IntVar(&port, "port", 0, "Local port to expose (required)")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip host key verification")
+	cmd.Flags().StringVar(&name, "name", "", "Custom subdomain name for the tunnel URL")
 
 	// Wire up env var defaults. cobra doesn't do this natively.
 	if env := os.Getenv("FONZYGROK_SERVER"); env != "" && serverAddr == "" {
@@ -72,7 +75,7 @@ Examples:
 }
 
 // runTunnel is the core logic: connect, request tunnel, proxy traffic.
-func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool) error {
+func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string) error {
 	// Resolve env vars for server + token if flags were empty.
 	if serverAddr == "" {
 		serverAddr = os.Getenv("FONZYGROK_SERVER")
@@ -118,7 +121,7 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 	// ConnectWithRetry handles the full lifecycle:
 	// connect → open control → request tunnel → proxy → reconnect on failure.
 	err := connector.ConnectWithRetry(ctx, func() error {
-		return onConnect(ctx, connector, port, logger)
+		return onConnect(ctx, connector, port, name, logger)
 	})
 
 	if err != nil && err != context.Canceled {
@@ -132,7 +135,7 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 // onConnect is called after each successful SSH connection.
 // It opens the control channel, requests a tunnel, and starts the proxy.
-func onConnect(ctx context.Context, connector *client.Connector, port int, logger *slog.Logger) error {
+func onConnect(ctx context.Context, connector *client.Connector, port int, name string, logger *slog.Logger) error {
 	// Open control channel.
 	cc, err := connector.OpenControl()
 	if err != nil {
@@ -140,18 +143,22 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, logge
 	}
 
 	// Request tunnel.
-	assignment, err := cc.RequestTunnel(port, "http")
+	assignment, err := cc.RequestTunnel(port, "http", name)
 	if err != nil {
 		cc.Close()
 		return fmt.Errorf("request tunnel: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "\n  ✔ Tunnel established!\n")
+	if assignment.Name != "" {
+		fmt.Fprintf(os.Stderr, "  ↳ Name: %s\n", assignment.Name)
+	}
 	fmt.Fprintf(os.Stderr, "  ↳ Public URL: %s\n", assignment.PublicURL)
 	fmt.Fprintf(os.Stderr, "  ↳ Forwarding: %s → localhost:%d\n\n", assignment.PublicURL, port)
 
 	logger.Info("tunnel active",
 		slog.String("tunnel_id", assignment.TunnelID),
+		slog.String("name", assignment.Name),
 		slog.String("public_url", assignment.PublicURL),
 		slog.Int("local_port", port),
 	)

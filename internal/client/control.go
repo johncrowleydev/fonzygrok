@@ -31,12 +31,15 @@ func newControlChannel(ch ssh.Channel, logger *slog.Logger) *ControlChannel {
 }
 
 // RequestTunnel sends a TunnelRequest and reads the server response.
+// If name is non-empty, the server will attempt to assign that subdomain.
+// If name is empty, the server auto-generates a readable name.
 // It returns the TunnelAssignment on success, or an error if the server
 // responds with an Error message or the channel fails.
-func (cc *ControlChannel) RequestTunnel(localPort int, protocol string) (*proto.TunnelAssignment, error) {
+func (cc *ControlChannel) RequestTunnel(localPort int, protocol string, name string) (*proto.TunnelAssignment, error) {
 	req := proto.TunnelRequest{
 		LocalPort: localPort,
 		Protocol:  protocol,
+		Name:      name,
 	}
 
 	msg, err := proto.WrapPayload(proto.TypeTunnelRequest, req)
@@ -47,6 +50,7 @@ func (cc *ControlChannel) RequestTunnel(localPort int, protocol string) (*proto.
 	cc.logger.Info("requesting tunnel",
 		slog.Int("local_port", localPort),
 		slog.String("protocol", protocol),
+		slog.String("name", name),
 	)
 
 	if err := cc.encoder.Encode(msg); err != nil {
@@ -70,6 +74,7 @@ func (cc *ControlChannel) RequestTunnel(localPort int, protocol string) (*proto.
 		}
 		cc.logger.Info("tunnel assigned",
 			slog.String("tunnel_id", assignment.TunnelID),
+			slog.String("name", assignment.Name),
 			slog.String("public_url", assignment.PublicURL),
 		)
 		return &assignment, nil
