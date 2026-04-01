@@ -226,6 +226,83 @@ documents:
       auto-generated readable names (adjective-noun pairs), server-side
       validation and reserved-name blacklist.
 
+  - id: SPR-007
+    path: 05_PROJECT/SPR-007_TLS_Config.md
+    title: "Sprint 007: Auto-TLS & YAML Config Files"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.1, tls, config]
+    agents: [coder]
+    summary: >
+      Let's Encrypt autocert on edge router (port 443) + YAML config
+      file support for server and client binaries.
+
+  - id: SPR-008
+    path: 05_PROJECT/SPR-008_Metrics_Inspector.md
+    title: "Sprint 008: Connection Metrics & Request Inspection UI"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.1, metrics, ui]
+    agents: [coder]
+    summary: >
+      Server-side per-tunnel traffic metrics (bytes, requests, latency)
+      and client-side request inspection web UI at localhost:4040.
+
+  - id: SPR-009
+    path: 05_PROJECT/SPR-009_v11_Release.md
+    title: "Sprint 009: v1.1 Integration & Release"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, integration, v1.1, release]
+    agents: [coder]
+    summary: >
+      v1.1 integration sprint: E2E tests for all new features, Docker
+      TLS updates, production deployment, tag v1.1.0.
+
+  - id: SPR-010
+    path: 05_PROJECT/SPR-010_TCP_Tunnels.md
+    title: "Sprint 010: TCP Tunneling"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.2, tcp]
+    agents: [coder]
+    summary: >
+      Raw TCP tunnel support alongside HTTP. Expose local Postgres,
+      Redis, etc. via assigned public port.
+
+  - id: SPR-011
+    path: 05_PROJECT/SPR-011_RateLimit_Dashboard.md
+    title: "Sprint 011: Rate Limiting & Web Dashboard"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.2, ratelimit, dashboard]
+    agents: [coder]
+    summary: >
+      Per-tunnel token bucket rate limiting with 429 responses.
+      Web dashboard (htmx + Alpine.js) for token/tunnel management.
+
+  - id: SPR-012
+    path: 05_PROJECT/SPR-012_ACL_DashAuth.md
+    title: "Sprint 012: IP Whitelisting & Dashboard Auth"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, feature, v1.2, security, acl]
+    agents: [coder]
+    summary: >
+      Per-tunnel IP allow/deny lists (CIDR). Admin API bearer token
+      auth and dashboard login page.
+
+  - id: SPR-013
+    path: 05_PROJECT/SPR-013_v12_Release.md
+    title: "Sprint 013: v1.2 Integration & Release"
+    type: how-to
+    status: READY
+    tags: [project-management, sprint, workflow, integration, v1.2, release]
+    agents: [coder]
+    summary: >
+      v1.2 integration sprint: E2E tests for TCP, rate limiting,
+      dashboard, ACLs. Production deployment, tag v1.2.0.
+
   # ── 10_GOVERNANCE ───────────────────────────────────────────────────────────
   - id: GOV-001
     path: 10_GOVERNANCE/GOV-001_DocumentationStandard.md
