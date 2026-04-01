@@ -303,6 +303,29 @@ documents:
       v1.2 integration sprint: E2E tests for TCP, rate limiting,
       dashboard, ACLs. Production deployment, tag v1.2.0.
 
+  - id: SPR-014
+    path: 05_PROJECT/SPR-014_Pretty_Output.md
+    title: "Sprint 014: Client UX — Pretty Output + Verbose Mode"
+    type: how-to
+    status: ACTIVE
+    tags: [sprint, defect-fix, ux, client, v1.1]
+    agents: [developer-b]
+    summary: >
+      Fix DEF-001. Replace raw JSON client output with human-friendly
+      formatted messages. Add --verbose flag for opt-in JSON logs.
+
+  # ── 50_DEFECTS ──────────────────────────────────────────────────────────────
+  - id: DEF-001
+    path: 50_DEFECTS/DEF-001_Raw_JSON_Client_Output.md
+    title: "Client outputs raw JSON logs instead of human-friendly messages"
+    type: defect
+    status: OPEN
+    tags: [defect, ux, client, v1.1]
+    agents: [developer-b]
+    summary: >
+      Client binary dumps raw JSON slog to stdout for all events.
+      Users see a wall of JSON instead of clear formatted status messages.
+
   # ── 10_GOVERNANCE ───────────────────────────────────────────────────────────
   - id: GOV-001
     path: 10_GOVERNANCE/GOV-001_DocumentationStandard.md
