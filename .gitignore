@@ -38,3 +38,6 @@ coverage.html
 # OS
 .DS_Store
 Thumbs.db
+
+# Keys
+*.pem

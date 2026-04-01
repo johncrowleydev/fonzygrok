@@ -1,0 +1,42 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{if .Title}}{{.Title}} — {{end}}Fonzygrok</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+<div class="shell">
+    <nav class="nav">
+        <a class="nav-brand" href="/dashboard">fonzygrok<span> dashboard</span></a>
+        <ul class="nav-links">
+            {{if .Claims}}
+                <li><a href="/dashboard" {{if eq .Nav "dashboard"}}class="active"{{end}}>Dashboard</a></li>
+                {{if eq .Claims.Role "admin"}}
+                <li><a href="/admin/users" {{if eq .Nav "admin-users"}}class="active"{{end}}>Users</a></li>
+                <li><a href="/admin/invite-codes" {{if eq .Nav "admin-invites"}}class="active"{{end}}>Invites</a></li>
+                {{end}}
+                <li>
+                    <form method="POST" action="/logout" style="display:inline">
+                        <button type="submit" title="Logout ({{.Claims.Username}})">Logout</button>
+                    </form>
+                </li>
+            {{end}}
+        </ul>
+    </nav>
+    <main class="main">
+        {{if .Flash}}
+        <div class="flash flash-{{.FlashType}}" id="flash-msg">
+            {{if eq .FlashType "success"}}✔{{else}}✘{{end}} {{.Flash}}
+        </div>
+        <script>setTimeout(function(){var e=document.getElementById('flash-msg');if(e)e.style.display='none';},5000);</script>
+        {{end}}
+        {{template "content" .}}
+    </main>
+</div>
+</body>
+</html>{{end}}

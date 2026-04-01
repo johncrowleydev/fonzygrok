@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"time"
 
 	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/store"
@@ -102,9 +101,9 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 		logger.Info("TLS enabled", "cert_dir", config.TLS.CertDir, "domain", config.TLS.Domain)
 	}
 
-	// Create JWT manager (auto-generates secret on first run).
+	// Create JWT manager for dashboard sessions.
 	jwtSecretPath := filepath.Join(config.DataDir, "jwt_secret")
-	jwtMgr, err := auth.NewJWTManager(jwtSecretPath, 24*time.Hour)
+	jwtMgr, err := auth.NewJWTManager(jwtSecretPath, auth.DefaultJWTExpiry)
 	if err != nil {
 		st.Close()
 		return nil, fmt.Errorf("server: create JWT manager: %w", err)
@@ -112,6 +111,10 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 
 	// Create admin API.
 	admin := NewAdminAPI(config.Admin, st, jwtMgr, tm, sshSrv, logger)
+
+	// Register dashboard UI on the admin mux.
+	dash := NewDashboard(st, jwtMgr, tm, logger)
+	dash.RegisterRoutes(admin.Mux())
 
 	return &Server{
 		config:  config,

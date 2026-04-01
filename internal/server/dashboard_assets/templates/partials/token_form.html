@@ -1,0 +1,13 @@
+<form class="inline-form"
+      hx-post="/dashboard/tokens"
+      hx-target="#token-reveal-area"
+      hx-swap="innerHTML"
+      hx-on::after-request="this.reset();document.getElementById('token-create-area').innerHTML=''">
+    <div class="form-group" style="margin-bottom:0;flex:1">
+        <input type="text" name="name" placeholder="Token name (e.g., dev-laptop)" required
+               pattern="[a-zA-Z0-9][a-zA-Z0-9-]{0,63}">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Create</button>
+    <button type="button" class="btn btn-ghost btn-sm"
+            onclick="document.getElementById('token-create-area').innerHTML=''">Cancel</button>
+</form>

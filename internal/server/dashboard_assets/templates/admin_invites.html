@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Invite Codes</h2>
+        <button class="btn btn-primary btn-sm"
+                hx-post="/admin/invite-codes/new"
+                hx-target="#invite-reveal-area"
+                hx-swap="innerHTML">
+            + Generate Code
+        </button>
+    </div>
+    <div id="invite-reveal-area"></div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th class="hide-mobile">Created By</th>
+                    <th class="hide-mobile">Created</th>
+                    <th>Used By</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="invite-table-body">
+                {{if .InviteCodes}}
+                    {{range .InviteCodes}}
+                    <tr>
+                        <td>
+                            <span class="copy-wrap">
+                                <span class="mono">{{.Code}}</span>
+                                <button class="copy-btn" onclick="copyText('{{.Code}}',this)" title="Copy">📋</button>
+                            </span>
+                        </td>
+                        <td class="hide-mobile">{{.CreatedBy}}</td>
+                        <td class="hide-mobile">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+                        <td>
+                            {{if .UsedBy}}{{deref .UsedBy}}{{else}}<span style="color:var(--text-muted)">—</span>{{end}}
+                        </td>
+                        <td>
+                            {{if .UsedBy}}<span class="badge badge-used">Used</span>
+                            {{else if .IsActive}}<span class="badge badge-active">Available</span>
+                            {{else}}<span class="badge badge-revoked">Inactive</span>{{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                {{else}}
+                <tr><td colspan="5" class="empty">No invite codes generated yet.</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = '✔';
+        btn.classList.add('copied');
+        setTimeout(function() {
+            btn.textContent = '📋';
+            btn.classList.remove('copied');
+        }, 2000);
+    });
+}
+</script>
+{{end}}

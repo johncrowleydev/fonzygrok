@@ -31,6 +31,7 @@ type AdminAPI struct {
 	sshServer *SSHServer
 	logger    *slog.Logger
 	server    *http.Server
+	mux       *http.ServeMux
 	startTime time.Time
 }
 
@@ -49,63 +50,63 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 		startTime: time.Now().UTC(),
 	}
 
-	mux := http.NewServeMux()
+	a.mux = http.NewServeMux()
 
 	// Public endpoints (no auth).
-	mux.HandleFunc("/api/v1/health", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/health", a.methodRoute(map[string]http.HandlerFunc{
 		"GET": a.handleHealth,
 	}))
-	mux.HandleFunc("/api/v1/register", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/register", a.methodRoute(map[string]http.HandlerFunc{
 		"POST": a.handleRegister,
 	}))
-	mux.HandleFunc("/api/v1/login", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/login", a.methodRoute(map[string]http.HandlerFunc{
 		"POST": a.handleLogin,
 	}))
-	mux.HandleFunc("/api/v1/logout", a.methodRoute(map[string]http.HandlerFunc{
+	a.mux.HandleFunc("/api/v1/logout", a.methodRoute(map[string]http.HandlerFunc{
 		"POST": a.handleLogout,
 	}))
 
 	// Authenticated endpoints.
-	mux.Handle("/api/v1/me", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/me", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{"GET": a.handleMe}),
 	)))
-	mux.Handle("/api/v1/tokens", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/tokens", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET":  a.handleListTokensAuth,
 			"POST": a.handleCreateTokenAuth,
 		}),
 	)))
-	mux.Handle("/api/v1/tokens/", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/tokens/", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"DELETE": a.handleDeleteTokenAuth,
 		}),
 	)))
 
 	// Admin-only endpoints.
-	mux.Handle("/api/v1/invite-codes", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
+	a.mux.Handle("/api/v1/invite-codes", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET":  a.handleListInviteCodes,
 			"POST": a.handleCreateInviteCode,
 		}),
 	))))
-	mux.Handle("/api/v1/users", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
+	a.mux.Handle("/api/v1/users", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleListUsers,
 		}),
 	))))
 
 	// Existing admin-only endpoints (now behind auth).
-	mux.Handle("/api/v1/tunnels", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/tunnels", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleListTunnels,
 		}),
 	)))
-	mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"DELETE": a.handleDeleteTunnel,
 		}),
 	)))
-	mux.Handle("/api/v1/metrics", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/metrics", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleMetrics,
 		}),
@@ -113,7 +114,7 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 
 	a.server = &http.Server{
 		Addr:    config.Addr,
-		Handler: corsMiddleware(mux),
+		Handler: corsMiddleware(a.mux),
 	}
 
 	return a
@@ -149,6 +150,12 @@ func (a *AdminAPI) Stop() error {
 // Handler returns the http.Handler for testing.
 func (a *AdminAPI) Handler() http.Handler {
 	return a.server.Handler
+}
+
+// Mux returns the underlying ServeMux for registering additional routes
+// (e.g., the dashboard UI).
+func (a *AdminAPI) Mux() *http.ServeMux {
+	return a.mux
 }
 
 // --- Route helpers ---

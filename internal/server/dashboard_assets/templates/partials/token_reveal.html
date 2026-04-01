@@ -1,0 +1,19 @@
+<div class="token-reveal">
+    <p><strong>⚠ Save this token — it won't be shown again.</strong></p>
+    <div class="copy-wrap" style="margin-top:0.5rem">
+        <span id="raw-token-text">{{.RawToken}}</span>
+        <button class="copy-btn" onclick="copyTokenText()" title="Copy token">📋</button>
+    </div>
+    <p style="margin-top:0.5rem">Name: <strong>{{.TokenName}}</strong> · ID: <code class="mono">{{.TokenID}}</code></p>
+</div>
+<script>
+function copyTokenText() {
+    var text = document.getElementById('raw-token-text').textContent;
+    navigator.clipboard.writeText(text).then(function() {
+        var btn = document.querySelector('.token-reveal .copy-btn');
+        btn.textContent = '✔';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = '📋'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+</script>
