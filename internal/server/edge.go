@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,10 +32,12 @@ type EdgeConfig struct {
 // by extracting the subdomain from the Host header and proxying the
 // request through an SSH channel. Per CON-002 §3.
 type EdgeRouter struct {
-	config  EdgeConfig
-	tunnels *TunnelManager
-	logger  *slog.Logger
-	server  *http.Server
+	config     EdgeConfig
+	tunnels    *TunnelManager
+	logger     *slog.Logger
+	server     *http.Server
+	tlsMgr     *TLSManager
+	redirectSrv *http.Server // HTTP→HTTPS redirect server (when TLS enabled)
 }
 
 // NewEdgeRouter creates a new HTTP edge router.
@@ -61,13 +64,28 @@ func NewEdgeRouter(config EdgeConfig, tunnels *TunnelManager, logger *slog.Logge
 }
 
 // Start begins listening for HTTP requests on the configured address.
+// If a TLS manager is set, it starts TLS on :443 and a redirect on :80.
 func (e *EdgeRouter) Start(ctx context.Context) error {
+	if e.tlsMgr != nil {
+		return e.startTLS(ctx)
+	}
+	return e.startPlain(ctx)
+}
+
+// SetTLSManager attaches a TLS manager to the edge router.
+// Must be called before Start().
+func (e *EdgeRouter) SetTLSManager(tm *TLSManager) {
+	e.tlsMgr = tm
+}
+
+// startPlain starts a plain HTTP listener (existing behavior).
+func (e *EdgeRouter) startPlain(ctx context.Context) error {
 	ln, err := net.Listen("tcp", e.config.Addr)
 	if err != nil {
 		return fmt.Errorf("edge: listen %s: %w", e.config.Addr, err)
 	}
 
-	e.logger.Info("edge router listening", "addr", ln.Addr().String())
+	e.logger.Info("edge router listening (HTTP)", "addr", ln.Addr().String())
 
 	go func() {
 		<-ctx.Done()
@@ -80,10 +98,69 @@ func (e *EdgeRouter) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the HTTP edge router.
+// startTLS starts the edge router with TLS on :443 and an HTTP redirect on :80.
+func (e *EdgeRouter) startTLS(ctx context.Context) error {
+	// Determine TLS listen address. Use :443 if the configured addr is :8080
+	// (default), otherwise use the configured addr for the TLS listener.
+	tlsAddr := e.config.Addr
+	if tlsAddr == ":8080" || tlsAddr == "0.0.0.0:8080" {
+		tlsAddr = ":443"
+	}
+
+	// Create TLS listener.
+	tlsLn, err := tls.Listen("tcp", tlsAddr, e.tlsMgr.TLSConfig())
+	if err != nil {
+		return fmt.Errorf("edge: tls listen %s: %w", tlsAddr, err)
+	}
+
+	e.logger.Info("edge router listening (HTTPS)", "addr", tlsLn.Addr().String())
+
+	// Start HTTP redirect server on :80.
+	redirectAddr := ":80"
+	redirectHandler := e.tlsMgr.Manager().HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target := "https://" + r.Host + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	}))
+
+	e.redirectSrv = &http.Server{
+		Addr:    redirectAddr,
+		Handler: redirectHandler,
+	}
+
+	redirectLn, err := net.Listen("tcp", redirectAddr)
+	if err != nil {
+		// Port 80 may not be available — log and continue with just TLS.
+		e.logger.Warn("edge: could not start HTTP redirect server", "addr", redirectAddr, "error", err)
+	} else {
+		e.logger.Info("edge redirect server listening (HTTP→HTTPS)", "addr", redirectLn.Addr().String())
+		go func() {
+			if err := e.redirectSrv.Serve(redirectLn); err != nil && err != http.ErrServerClosed {
+				e.logger.Error("edge: redirect serve", "error", err)
+			}
+		}()
+	}
+
+	go func() {
+		<-ctx.Done()
+		e.Stop()
+	}()
+
+	if err := e.server.Serve(tlsLn); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("edge: tls serve: %w", err)
+	}
+	return nil
+}
+
+// Stop gracefully shuts down the HTTP edge router and redirect server.
 func (e *EdgeRouter) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	// Stop redirect server if running.
+	if e.redirectSrv != nil {
+		e.redirectSrv.Shutdown(ctx)
+	}
+
 	return e.server.Shutdown(ctx)
 }
 

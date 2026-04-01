@@ -34,13 +34,13 @@ RUN adduser -D -u 10001 fonzygrok
 COPY --from=builder /out/fonzygrok-server /usr/local/bin/fonzygrok-server
 COPY --from=builder /out/fonzygrok-client /usr/local/bin/fonzygrok-client
 
-# Create data directory.
-RUN mkdir -p /data && chown fonzygrok:fonzygrok /data
+# Create data and certs directories.
+RUN mkdir -p /data /data/certs && chown -R fonzygrok:fonzygrok /data
 
-# Expose ports: SSH, HTTP edge, Admin API.
-EXPOSE 2222 8080 9090
+# Expose ports: SSH, HTTP edge, HTTPS edge, Admin API.
+EXPOSE 2222 8080 443 9090
 
-# Volume for persistent data (database, host key).
+# Volumes for persistent data (database, host key, TLS certs).
 VOLUME /data
 
 # Run as non-root.

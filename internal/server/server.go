@@ -24,6 +24,8 @@ type ServerConfig struct {
 	Edge EdgeConfig
 	// Admin API configuration.
 	Admin AdminConfig
+	// TLS configuration for auto-TLS on the edge router.
+	TLS TLSConfig
 }
 
 // Server is the top-level orchestrator that wires all subsystems together:
@@ -80,6 +82,23 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 
 	// Create edge router.
 	edge := NewEdgeRouter(config.Edge, tm, logger)
+
+	// Wire TLS if enabled.
+	if config.TLS.Enabled {
+		if config.TLS.CertDir == "" {
+			config.TLS.CertDir = filepath.Join(config.DataDir, "certs")
+		}
+		if config.TLS.Domain == "" {
+			config.TLS.Domain = config.Domain
+		}
+		tlsMgr := NewTLSManager(config.TLS)
+		edge.SetTLSManager(tlsMgr)
+
+		// Set URL scheme to https for tunnel URLs.
+		tm.SetScheme("https")
+
+		logger.Info("TLS enabled", "cert_dir", config.TLS.CertDir, "domain", config.TLS.Domain)
+	}
 
 	// Create admin API.
 	admin := NewAdminAPI(config.Admin, st, tm, sshSrv, logger)

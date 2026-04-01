@@ -47,6 +47,7 @@ type TunnelEntry struct {
 // Thread-safe via sync.RWMutex. Implements TunnelRegistrar.
 type TunnelManager struct {
 	domain  string
+	scheme  string // "http" or "https"
 	store   *store.Store
 	logger  *slog.Logger
 
@@ -60,12 +61,19 @@ type TunnelManager struct {
 func NewTunnelManager(domain string, st *store.Store, logger *slog.Logger) *TunnelManager {
 	return &TunnelManager{
 		domain:    domain,
+		scheme:    "http",
 		store:     st,
 		logger:    logger,
 		tunnels:   make(map[string]*TunnelEntry),
 		byName:    make(map[string]*TunnelEntry),
 		bySession: make(map[*Session]map[string]bool),
 	}
+}
+
+// SetScheme sets the URL scheme ("http" or "https") for public tunnel URLs.
+// Must be called before any tunnels are registered.
+func (tm *TunnelManager) SetScheme(scheme string) {
+	tm.scheme = scheme
 }
 
 // Register creates a new tunnel for the given session and request.
@@ -110,7 +118,7 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 	}
 
 	subdomain := name
-	publicURL := fmt.Sprintf("http://%s.%s", subdomain, tm.domain)
+	publicURL := fmt.Sprintf("%s://%s.%s", tm.scheme, subdomain, tm.domain)
 
 	entry := &TunnelEntry{
 		TunnelID:  tunnelID,

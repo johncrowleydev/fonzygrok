@@ -39,11 +39,13 @@ func main() {
 // serveCmd starts all server subsystems.
 func serveCmd() *cobra.Command {
 	var (
-		sshAddr   string
-		httpAddr  string
-		adminAddr string
-		dataDir   string
-		domain    string
+		sshAddr    string
+		httpAddr   string
+		adminAddr  string
+		dataDir    string
+		domain     string
+		tlsEnabled bool
+		tlsCertDir string
 	)
 
 	cmd := &cobra.Command{
@@ -53,6 +55,11 @@ func serveCmd() *cobra.Command {
 			logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 				Level: slog.LevelInfo,
 			}))
+
+			// Default TLS cert dir under data dir if not specified.
+			if tlsEnabled && tlsCertDir == "" {
+				tlsCertDir = dataDir + "/certs"
+			}
 
 			config := server.ServerConfig{
 				DataDir: dataDir,
@@ -65,6 +72,11 @@ func serveCmd() *cobra.Command {
 				},
 				Admin: server.AdminConfig{
 					Addr: adminAddr,
+				},
+				TLS: server.TLSConfig{
+					Enabled: tlsEnabled,
+					CertDir: tlsCertDir,
+					Domain:  domain,
 				},
 			}
 
@@ -96,6 +108,8 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&adminAddr, "admin-addr", "127.0.0.1:9090", "Admin API listen address")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory for database and host key")
 	cmd.Flags().StringVar(&domain, "domain", "tunnel.localhost", "Base domain for tunnel routing")
+	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
+	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")
 
 	return cmd
 }
