@@ -155,6 +155,48 @@ EVO- (feature request)
 | `CLOSED` | Passed audit. Archived. |
 | `BLOCKED` | Waiting on contract resolution or Human decision |
 
+### 4.2 Sprint Acceptance Criteria (Mandatory)
+
+> **Added in response to DEF-002.** "All tests pass" is necessary but not
+> sufficient. Sprints were being approved based on test counts alone.
+
+Every sprint MUST include the following acceptance criteria:
+
+1. **Automated tests pass** — All existing tests pass with `-race` (or
+   equivalent). New tests cover added functionality.
+2. **User-scenario tests** — At minimum, 3 tests that exercise the feature
+   the way an end user would invoke it. These must use realistic inputs,
+   not developer-convenient shortcuts.
+   - Example (good): `--server fonzygrok.com` (no port, like a real user)
+   - Example (bad): `--server localhost:2222` (developer shortcut)
+3. **Negative/edge-case tests** — What happens with missing args, bad input,
+   network failures, partial data?
+4. **Cross-machine testing** — For any feature involving network communication,
+   at least one test must run across separate processes (not in-process mocks).
+
+### 4.3 Release Signoff Protocol
+
+> **The Architect may NOT create a release tag without explicit Human approval.**
+
+Release flow:
+
+```
+Code Complete
+  → All automated tests pass
+  → Architect audit passes
+  → Architect proposes tag to Human
+  → Human performs UAT (GOV-002 §18)
+  → Human says "tag it"
+  → Architect creates tag
+  → Deploy
+  → Post-deployment smoke test (GOV-002 §18A)
+  → Smoke passes → deployment complete
+  → Smoke fails → rollback, file DEF-, fix, repeat
+```
+
+Violations of this protocol (e.g., tagging without signoff) are treated as
+process defects and documented in DEF- reports.
+
 ---
 
 ## 5. The Discrepancy Resolution Protocol

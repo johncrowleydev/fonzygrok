@@ -444,9 +444,98 @@ Run the system under normal load for **extended periods** (hours to days) to det
 
 ## 18. User Acceptance Testing (UAT) — "The Business Sign-Off"
 
-Real users or stakeholders perform exploratory or structured testing on an RC (Release Candidate) build to confirm it solves the original business problem.
+Real users or stakeholders perform exploratory or structured testing on an RC
+(Release Candidate) build to confirm it solves the original business problem.
 
-**Requirement**: While automated E2E proves the *spec* works, UAT proves the spec was *correct*. 
+**Requirement**: While automated E2E proves the *spec* works, UAT proves the
+spec was *correct*.
+
+> **This tier is MANDATORY before any release tag.** UAT is not optional, not
+> "nice to have," and not something you skip because the automated tests pass.
+
+### 18.1 UAT Requirements
+
+1. **Human runs the binary** — The Human (or designated tester) must run the
+   compiled binary on their own machine, not in the development environment.
+2. **First-run experience** — Test the most common invocation a new user would
+   try. If this fails, the release fails.
+3. **Cross-platform** — If the project targets multiple OS, UAT must cover at
+   least one non-development OS (e.g., if developed on Linux, test on Windows
+   or macOS).
+4. **No coaching** — The Human should be able to use the tool from the help
+   output and documentation alone. If they can't, the UX is broken.
+5. **Written signoff** — The Human explicitly approves ("tag it") before any
+   release tag is created. The Architect may not tag without this.
+
+### 18.2 UAT Failure Protocol
+
+If UAT fails:
+1. Architect files a `DEF-` doc with the exact failure
+2. Architect creates a sprint to fix
+3. Developer fixes, all automated tests re-run
+4. UAT repeats from step 1
+5. No release until UAT passes
+
+---
+
+## 18A. Production Smoke Tests — "The Deployment Proof"
+
+> **Added in response to DEF-002.** v1.1 shipped with defects that would have
+> been caught by a 30-second smoke test after deployment.
+
+**When required**: After EVERY production deployment. Not optional.
+
+**Who runs them**: The Architect, immediately after deployment completes.
+
+### 18A.1 Smoke Test Requirements
+
+Production smoke tests verify that the deployed system actually works end-to-end
+over the real network. They are NOT the same as E2E tests (which run in-process
+on localhost).
+
+| # | Test | What It Proves |
+|:--|:-----|:---------------|
+| 1 | Health endpoint responds | Server is running |
+| 2 | Client connects with default flags | SSH connection works over internet |
+| 3 | Tunnel is created | Registration and naming work |
+| 4 | HTTP request through tunnel returns response | Full proxy pipeline works |
+| 5 | Metrics/admin endpoint reflects the request | Observability works |
+| 6 | TLS handshake (if enabled) | Certificates are valid |
+
+### 18A.2 Smoke Test Execution
+
+Smoke tests must be run from a **different machine** than the server. Testing
+from localhost does not prove network connectivity.
+
+```bash
+# Example smoke test script (adapt per project)
+# Run from a client machine, NOT from the server
+
+# 1. Health check
+curl -f https://tunnel.example.com/api/v1/health
+
+# 2. Connect client and create tunnel
+./fonzygrok --server example.com --token $TOKEN --port 8080 --name smoke-test &
+sleep 3
+
+# 3. Verify tunnel works
+curl -f https://smoke-test.tunnel.example.com/
+# Expected: response from localhost:8080
+
+# 4. Check metrics
+curl -f https://tunnel.example.com/api/v1/tunnels | grep smoke-test
+
+# 5. Clean up
+kill %1
+```
+
+### 18A.3 Failure Protocol
+
+If any smoke test fails:
+1. **Deployment is NOT complete** — do not announce, do not close the sprint
+2. Architect files a `DEF-` with the exact failure and server logs
+3. Rollback to previous version if the failure is user-facing
+4. Fix → redeploy → re-smoke — loop until all pass
 
 ---
 
