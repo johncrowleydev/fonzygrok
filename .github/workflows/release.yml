@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
   release:
@@ -11,25 +11,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Generate Release Notes
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: dist/checksums.txt
-
-      - name: Upload Linux Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: path/to/linux/assets/*
-
-      - name: Upload macOS Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: path/to/macos/assets/*
-
-      - name: Upload Windows Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: path/to/windows/assets/*
+          files: |
+            dist/checksums.txt
+            path/to/linux/assets/*
+            path/to/macos/assets/*
+            path/to/windows/assets/*
