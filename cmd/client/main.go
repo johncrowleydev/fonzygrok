@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/fonzygrok/fonzygrok/internal/client"
@@ -117,6 +118,11 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("--port must be between 1 and 65535")
+	}
+
+	// Append default SSH port if not specified.
+	if !strings.Contains(serverAddr, ":") {
+		serverAddr = serverAddr + ":2222"
 	}
 
 	// Structured JSON logger per GOV-006 / BLU-001 §7.
