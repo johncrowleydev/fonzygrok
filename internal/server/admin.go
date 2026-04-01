@@ -63,6 +63,9 @@ func NewAdminAPI(config AdminConfig, st *store.Store, tunnels *TunnelManager, ss
 	mux.HandleFunc("/api/v1/tunnels/", a.methodRoute(map[string]http.HandlerFunc{
 		"DELETE": a.handleDeleteTunnel,
 	}))
+	mux.HandleFunc("/api/v1/metrics", a.methodRoute(map[string]http.HandlerFunc{
+		"GET": a.handleMetrics,
+	}))
 
 	a.server = &http.Server{
 		Addr:    config.Addr,
@@ -256,15 +259,19 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	active := a.tunnels.ListActive()
 
 	type tunnelResp struct {
-		TunnelID    string `json:"tunnel_id"`
-		Name        string `json:"name"`
-		Subdomain   string `json:"subdomain"`
-		PublicURL   string `json:"public_url"`
-		Protocol    string `json:"protocol"`
-		ClientIP    string `json:"client_ip"`
-		TokenID     string `json:"token_id"`
-		LocalPort   int    `json:"local_port"`
-		ConnectedAt string `json:"connected_at"`
+		TunnelID        string `json:"tunnel_id"`
+		Name            string `json:"name"`
+		Subdomain       string `json:"subdomain"`
+		PublicURL       string `json:"public_url"`
+		Protocol        string `json:"protocol"`
+		ClientIP        string `json:"client_ip"`
+		TokenID         string `json:"token_id"`
+		LocalPort       int    `json:"local_port"`
+		ConnectedAt     string `json:"connected_at"`
+		BytesIn         int64  `json:"bytes_in"`
+		BytesOut        int64  `json:"bytes_out"`
+		RequestsProxied int64  `json:"requests_proxied"`
+		LastRequestAt   string `json:"last_request_at,omitempty"`
 	}
 
 	items := make([]tunnelResp, 0, len(active))
@@ -281,6 +288,15 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 		if entry.Session != nil {
 			item.ClientIP = entry.Session.RemoteAddr
 			item.TokenID = entry.Session.TokenID
+		}
+		if entry.Metrics != nil {
+			snap := entry.Metrics.Snapshot()
+			item.BytesIn = snap.BytesIn
+			item.BytesOut = snap.BytesOut
+			item.RequestsProxied = snap.RequestsProxied
+			if !snap.LastRequestAt.IsZero() {
+				item.LastRequestAt = snap.LastRequestAt.Format(time.RFC3339)
+			}
 		}
 		items = append(items, item)
 	}
@@ -305,6 +321,48 @@ func (a *AdminAPI) handleDeleteTunnel(w http.ResponseWriter, r *http.Request) {
 	a.tunnels.Deregister(tunnelID)
 	a.logger.Info("admin: tunnel force-closed", "tunnel_id", tunnelID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMetrics returns aggregated metrics across all active tunnels.
+func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	active := a.tunnels.ListActive()
+
+	var totalBytesIn, totalBytesOut, totalRequests int64
+
+	// Count unique sessions for active clients.
+	sessions := make(map[*Session]bool)
+
+	for _, entry := range active {
+		if entry.Metrics != nil {
+			snap := entry.Metrics.Snapshot()
+			totalBytesIn += snap.BytesIn
+			totalBytesOut += snap.BytesOut
+			totalRequests += snap.RequestsProxied
+		}
+		if entry.Session != nil {
+			sessions[entry.Session] = true
+		}
+	}
+
+	uptime := time.Since(a.startTime).Seconds()
+
+	resp := struct {
+		TotalBytesIn       int64   `json:"total_bytes_in"`
+		TotalBytesOut      int64   `json:"total_bytes_out"`
+		TotalRequestsProxied int64 `json:"total_requests_proxied"`
+		ActiveTunnels      int     `json:"active_tunnels"`
+		ActiveClients      int     `json:"active_clients"`
+		UptimeSeconds      float64 `json:"uptime_seconds"`
+	}{
+		TotalBytesIn:         totalBytesIn,
+		TotalBytesOut:        totalBytesOut,
+		TotalRequestsProxied: totalRequests,
+		ActiveTunnels:        len(active),
+		ActiveClients:        len(sessions),
+		UptimeSeconds:        uptime,
+	}
+
+	a.writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Helpers ---

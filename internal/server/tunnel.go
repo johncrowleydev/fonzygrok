@@ -40,6 +40,8 @@ type TunnelEntry struct {
 	Session *Session
 	// CreatedAt is when the tunnel was registered.
 	CreatedAt time.Time
+	// Metrics holds per-tunnel traffic counters.
+	Metrics *TunnelMetrics
 }
 
 // TunnelManager is the central registry of active tunnels.
@@ -129,6 +131,7 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 		LocalPort: req.LocalPort,
 		Session:   session,
 		CreatedAt: time.Now().UTC(),
+		Metrics:   NewTunnelMetrics(),
 	}
 
 	tm.mu.Lock()

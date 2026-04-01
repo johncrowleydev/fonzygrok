@@ -250,6 +250,10 @@ func (e *EdgeRouter) proxyRequest(w http.ResponseWriter, r *http.Request, entry 
 	r.Header.Set("X-Fonzygrok-Tunnel-Id", entry.TunnelID)
 
 	// Write the full HTTP request to the SSH channel.
+	// Count request bytes in (ContentLength if known, or wrap body).
+	if entry.Metrics != nil && r.ContentLength > 0 {
+		entry.Metrics.BytesIn.Add(r.ContentLength)
+	}
 	if err := r.Write(ch); err != nil {
 		e.logger.Error("edge: write request to tunnel",
 			"tunnel_id", entry.TunnelID,
@@ -295,12 +299,24 @@ func (e *EdgeRouter) proxyRequest(w http.ResponseWriter, r *http.Request, entry 
 		}
 		w.WriteHeader(result.resp.StatusCode)
 
-		// Copy response body.
-		if _, err := io.Copy(w, result.resp.Body); err != nil {
-			e.logger.Error("edge: copy response body",
-				"tunnel_id", entry.TunnelID,
-				"error", err,
-			)
+		// Copy response body, counting bytes out.
+		if entry.Metrics != nil {
+			cw := NewCountingWriter(w, &entry.Metrics.BytesOut)
+			if _, err := io.Copy(cw, result.resp.Body); err != nil {
+				e.logger.Error("edge: copy response body",
+					"tunnel_id", entry.TunnelID,
+					"error", err,
+				)
+			}
+			// Record the proxy request.
+			entry.Metrics.RecordRequest()
+		} else {
+			if _, err := io.Copy(w, result.resp.Body); err != nil {
+				e.logger.Error("edge: copy response body",
+					"tunnel_id", entry.TunnelID,
+					"error", err,
+				)
+			}
 		}
 
 		e.logger.Debug("edge: request proxied",
