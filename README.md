@@ -342,7 +342,7 @@ The `--server` flag now auto-appends `:2222` if no port is specified. Make sure 
 
 ### "unexpected EOF" on proxy requests
 
-This is a known issue when running client and server on different machines over the internet. See [DEF-003](CODEX/50_DEFECTS/DEF-003_Proxy_EOF_Over_Internet.md). A fix is in progress.
+This was fixed in v1.1.2. Update your server and client to the latest version. If you're self-hosting, redeploy with the latest code.
 
 ### Client shows raw JSON instead of pretty output
 
