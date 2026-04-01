@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 )
 
@@ -21,10 +22,11 @@ type AdminConfig struct {
 }
 
 // AdminAPI serves the admin REST API per CON-002 §4.
-// It provides health, token management, and tunnel management endpoints.
+// It provides health, auth, token management, and tunnel management endpoints.
 type AdminAPI struct {
 	config    AdminConfig
 	store     *store.Store
+	jwt       *auth.JWTManager
 	tunnels   *TunnelManager
 	sshServer *SSHServer
 	logger    *slog.Logger
@@ -36,10 +38,11 @@ type AdminAPI struct {
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$`)
 
 // NewAdminAPI creates a new admin API server.
-func NewAdminAPI(config AdminConfig, st *store.Store, tunnels *TunnelManager, sshSrv *SSHServer, logger *slog.Logger) *AdminAPI {
+func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, tunnels *TunnelManager, sshSrv *SSHServer, logger *slog.Logger) *AdminAPI {
 	a := &AdminAPI{
 		config:    config,
 		store:     st,
+		jwt:       jwtMgr,
 		tunnels:   tunnels,
 		sshServer: sshSrv,
 		logger:    logger,
@@ -47,29 +50,70 @@ func NewAdminAPI(config AdminConfig, st *store.Store, tunnels *TunnelManager, ss
 	}
 
 	mux := http.NewServeMux()
+
+	// Public endpoints (no auth).
 	mux.HandleFunc("/api/v1/health", a.methodRoute(map[string]http.HandlerFunc{
 		"GET": a.handleHealth,
 	}))
-	mux.HandleFunc("/api/v1/tokens", a.methodRoute(map[string]http.HandlerFunc{
-		"GET":  a.handleListTokens,
-		"POST": a.handleCreateToken,
+	mux.HandleFunc("/api/v1/register", a.methodRoute(map[string]http.HandlerFunc{
+		"POST": a.handleRegister,
 	}))
-	mux.HandleFunc("/api/v1/tokens/", a.methodRoute(map[string]http.HandlerFunc{
-		"DELETE": a.handleDeleteToken,
+	mux.HandleFunc("/api/v1/login", a.methodRoute(map[string]http.HandlerFunc{
+		"POST": a.handleLogin,
 	}))
-	mux.HandleFunc("/api/v1/tunnels", a.methodRoute(map[string]http.HandlerFunc{
-		"GET": a.handleListTunnels,
+	mux.HandleFunc("/api/v1/logout", a.methodRoute(map[string]http.HandlerFunc{
+		"POST": a.handleLogout,
 	}))
-	mux.HandleFunc("/api/v1/tunnels/", a.methodRoute(map[string]http.HandlerFunc{
-		"DELETE": a.handleDeleteTunnel,
-	}))
-	mux.HandleFunc("/api/v1/metrics", a.methodRoute(map[string]http.HandlerFunc{
-		"GET": a.handleMetrics,
-	}))
+
+	// Authenticated endpoints.
+	mux.Handle("/api/v1/me", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{"GET": a.handleMe}),
+	)))
+	mux.Handle("/api/v1/tokens", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"GET":  a.handleListTokensAuth,
+			"POST": a.handleCreateTokenAuth,
+		}),
+	)))
+	mux.Handle("/api/v1/tokens/", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"DELETE": a.handleDeleteTokenAuth,
+		}),
+	)))
+
+	// Admin-only endpoints.
+	mux.Handle("/api/v1/invite-codes", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"GET":  a.handleListInviteCodes,
+			"POST": a.handleCreateInviteCode,
+		}),
+	))))
+	mux.Handle("/api/v1/users", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"GET": a.handleListUsers,
+		}),
+	))))
+
+	// Existing admin-only endpoints (now behind auth).
+	mux.Handle("/api/v1/tunnels", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"GET": a.handleListTunnels,
+		}),
+	)))
+	mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"DELETE": a.handleDeleteTunnel,
+		}),
+	)))
+	mux.Handle("/api/v1/metrics", a.AuthMiddleware(http.HandlerFunc(
+		a.methodRouteHandler(map[string]http.HandlerFunc{
+			"GET": a.handleMetrics,
+		}),
+	)))
 
 	a.server = &http.Server{
 		Addr:    config.Addr,
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 	}
 
 	return a
@@ -119,6 +163,30 @@ func (a *AdminAPI) methodRoute(handlers map[string]http.HandlerFunc) http.Handle
 		a.writeAdminError(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			fmt.Sprintf("Method %s not allowed", r.Method))
 	}
+}
+
+// methodRouteHandler is like methodRoute but returns a regular HandlerFunc
+// (for use with middleware wrappers that expect http.Handler).
+func (a *AdminAPI) methodRouteHandler(handlers map[string]http.HandlerFunc) http.HandlerFunc {
+	return a.methodRoute(handlers)
+}
+
+// corsMiddleware adds CORS headers for web dashboard access.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		}
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // --- Endpoint handlers ---

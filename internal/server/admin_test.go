@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/proto"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 )
@@ -23,9 +25,27 @@ func newTestAdminAPI(t *testing.T) (*AdminAPI, *TunnelManager, *store.Store) {
 		t.Fatalf("store.Migrate: %v", err)
 	}
 
+	jwtMgr, _ := auth.NewJWTManager("", 1*time.Hour)
 	tm := NewTunnelManager("tunnel.test.com", st, testLogger())
-	admin := NewAdminAPI(AdminConfig{Addr: "127.0.0.1:0"}, st, tm, nil, testLogger())
+	admin := NewAdminAPI(AdminConfig{Addr: "127.0.0.1:0"}, st, jwtMgr, tm, nil, testLogger())
 	return admin, tm, st
+}
+
+// addTestAuth creates an admin user and returns a Bearer token for requests.
+func addTestAuth(t *testing.T, admin *AdminAPI, st *store.Store) string {
+	t.Helper()
+	hash, _ := auth.HashPassword("testpassword1")
+	user, _ := st.CreateUser("testadmin", "admin@test.com", hash, "admin")
+	token, _ := admin.jwt.CreateToken(auth.Claims{
+		UserID: user.ID, Username: user.Username, Role: user.Role,
+	})
+	return token
+}
+
+// authReq adds Bearer auth header to a request.
+func authReq(r *http.Request, token string) *http.Request {
+	r.Header.Set("Authorization", "Bearer "+token)
+	return r
 }
 
 // --- T-013A: Health ---
@@ -85,8 +105,9 @@ func TestHealthTunnelCount(t *testing.T) {
 func TestListTokensEmpty(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
-	req := httptest.NewRequest("GET", "/api/v1/tokens", nil)
+	req := authReq(httptest.NewRequest("GET", "/api/v1/tokens", nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -106,9 +127,10 @@ func TestListTokensEmpty(t *testing.T) {
 func TestCreateToken(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	body := `{"name": "test-token"}`
-	req := httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(body))
+	req := authReq(httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(body)), token)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
@@ -145,6 +167,7 @@ func TestCreateToken(t *testing.T) {
 func TestCreateTokenValidation(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	tests := []struct {
 		name string
@@ -159,7 +182,7 @@ func TestCreateTokenValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(tt.body))
+			req := authReq(httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(tt.body)), token)
 			w := httptest.NewRecorder()
 			admin.Handler().ServeHTTP(w, req)
 
@@ -179,15 +202,16 @@ func TestCreateTokenValidation(t *testing.T) {
 func TestListTokensAfterCreate(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	// Create a token.
 	body := `{"name": "my-token"}`
-	req := httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(body))
+	req := authReq(httptest.NewRequest("POST", "/api/v1/tokens", strings.NewReader(body)), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
 	// List tokens.
-	req = httptest.NewRequest("GET", "/api/v1/tokens", nil)
+	req = authReq(httptest.NewRequest("GET", "/api/v1/tokens", nil), token)
 	w = httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -214,11 +238,12 @@ func TestListTokensAfterCreate(t *testing.T) {
 func TestDeleteToken(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	// Create a token.
 	tok, _, _ := st.CreateToken("to-delete")
 
-	req := httptest.NewRequest("DELETE", "/api/v1/tokens/"+tok.ID, nil)
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tokens/"+tok.ID, nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -230,8 +255,9 @@ func TestDeleteToken(t *testing.T) {
 func TestDeleteTokenNotFound(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/tokens/tok_nonexistent", nil)
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tokens/tok_nonexistent", nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -249,6 +275,7 @@ func TestDeleteTokenNotFound(t *testing.T) {
 func TestDeleteTokenDisconnectsTunnels(t *testing.T) {
 	admin, tm, st := newTestAdminAPI(t)
 	defer st.Close()
+	jwtToken := addTestAuth(t, admin, st)
 
 	tok, _, _ := st.CreateToken("connected-token")
 
@@ -261,7 +288,7 @@ func TestDeleteTokenDisconnectsTunnels(t *testing.T) {
 		t.Fatalf("expected 2 active tunnels before delete")
 	}
 
-	req := httptest.NewRequest("DELETE", "/api/v1/tokens/"+tok.ID, nil)
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tokens/"+tok.ID, nil), jwtToken)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -279,11 +306,12 @@ func TestDeleteTokenDisconnectsTunnels(t *testing.T) {
 func TestListTunnels(t *testing.T) {
 	admin, tm, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
 	tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
 
-	req := httptest.NewRequest("GET", "/api/v1/tunnels", nil)
+	req := authReq(httptest.NewRequest("GET", "/api/v1/tunnels", nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -318,11 +346,12 @@ func TestListTunnels(t *testing.T) {
 func TestDeleteTunnel(t *testing.T) {
 	admin, tm, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
 	session := &Session{TokenID: "tok_test"}
 	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
 
-	req := httptest.NewRequest("DELETE", "/api/v1/tunnels/"+a.TunnelID, nil)
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tunnels/"+a.TunnelID, nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
@@ -338,8 +367,9 @@ func TestDeleteTunnel(t *testing.T) {
 func TestDeleteTunnelNotFound(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
+	token := addTestAuth(t, admin, st)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/tunnels/nonexistent", nil)
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tunnels/nonexistent", nil), token)
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 

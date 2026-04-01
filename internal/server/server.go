@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"time"
 
+	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 	"golang.org/x/crypto/ssh"
 )
@@ -100,8 +102,16 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 		logger.Info("TLS enabled", "cert_dir", config.TLS.CertDir, "domain", config.TLS.Domain)
 	}
 
+	// Create JWT manager (auto-generates secret on first run).
+	jwtSecretPath := filepath.Join(config.DataDir, "jwt_secret")
+	jwtMgr, err := auth.NewJWTManager(jwtSecretPath, 24*time.Hour)
+	if err != nil {
+		st.Close()
+		return nil, fmt.Errorf("server: create JWT manager: %w", err)
+	}
+
 	// Create admin API.
-	admin := NewAdminAPI(config.Admin, st, tm, sshSrv, logger)
+	admin := NewAdminAPI(config.Admin, st, jwtMgr, tm, sshSrv, logger)
 
 	return &Server{
 		config:  config,

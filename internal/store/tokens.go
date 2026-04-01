@@ -61,12 +61,13 @@ func (s *Store) ValidateToken(rawToken string) (*Token, error) {
 	var tok Token
 	var createdAt string
 	var lastUsedAt sql.NullString
+	var userID sql.NullString
 	var isActive int
 
 	err := s.db.QueryRow(
-		`SELECT id, name, token_hash, created_at, last_used_at, is_active FROM tokens WHERE token_hash = ?`,
+		`SELECT id, name, token_hash, user_id, created_at, last_used_at, is_active FROM tokens WHERE token_hash = ?`,
 		hash,
-	).Scan(&tok.ID, &tok.Name, &tok.TokenHash, &createdAt, &lastUsedAt, &isActive)
+	).Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &createdAt, &lastUsedAt, &isActive)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("store: invalid token")
 	}
@@ -77,6 +78,10 @@ func (s *Store) ValidateToken(rawToken string) (*Token, error) {
 	tok.IsActive = isActive == 1
 	if !tok.IsActive {
 		return nil, fmt.Errorf("store: token is revoked")
+	}
+
+	if userID.Valid {
+		tok.UserID = &userID.String
 	}
 
 	t, err := time.Parse(time.RFC3339, createdAt)
@@ -99,7 +104,7 @@ func (s *Store) ValidateToken(rawToken string) (*Token, error) {
 // ListTokens returns all tokens in the store.
 func (s *Store) ListTokens() ([]Token, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, token_hash, created_at, last_used_at, is_active FROM tokens ORDER BY created_at DESC`,
+		`SELECT id, name, token_hash, user_id, created_at, last_used_at, is_active FROM tokens ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list tokens: %w", err)
@@ -111,13 +116,18 @@ func (s *Store) ListTokens() ([]Token, error) {
 		var tok Token
 		var createdAt string
 		var lastUsedAt sql.NullString
+		var userID sql.NullString
 		var isActive int
 
-		if err := rows.Scan(&tok.ID, &tok.Name, &tok.TokenHash, &createdAt, &lastUsedAt, &isActive); err != nil {
+		if err := rows.Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &createdAt, &lastUsedAt, &isActive); err != nil {
 			return nil, fmt.Errorf("store: scan token row: %w", err)
 		}
 
 		tok.IsActive = isActive == 1
+		if userID.Valid {
+			tok.UserID = &userID.String
+		}
+
 		t, err := time.Parse(time.RFC3339, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("store: parse created_at: %w", err)

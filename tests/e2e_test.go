@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/client"
 	"github.com/fonzygrok/fonzygrok/internal/server"
 )
@@ -38,6 +39,7 @@ type testEnv struct {
 	edgeAddr  string
 	adminAddr string
 	rawToken  string
+	jwtToken  string // JWT for admin API auth
 	domain    string
 }
 
@@ -139,6 +141,15 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}()
 	time.Sleep(300 * time.Millisecond)
 
+	// Create an admin user and JWT for authenticated admin API calls.
+	hash, _ := auth.HashPassword("e2etestpassword1")
+	adminUser, _ := srv2.Store().CreateUser("e2eadmin", "e2e@test.com", hash, "admin")
+	jwtSecretPath := filepath.Join(tmpDir, "jwt_secret")
+	jwtMgr, _ := auth.NewJWTManager(jwtSecretPath, 24*time.Hour)
+	jwtToken, _ := jwtMgr.CreateToken(auth.Claims{
+		UserID: adminUser.ID, Username: adminUser.Username, Role: adminUser.Role,
+	})
+
 	env := &testEnv{
 		t:         t,
 		tmpDir:    tmpDir,
@@ -148,6 +159,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		edgeAddr:  edgeAddr,
 		adminAddr: adminAddr,
 		rawToken:  rawToken2,
+		jwtToken:  jwtToken,
 		domain:    domain,
 	}
 
@@ -496,7 +508,9 @@ func TestE2E_7_ClientDisconnectDeregistersTunnel(t *testing.T) {
 	ctrl.Close()
 
 	// Verify tunnel exists via admin API.
-	adminResp, err := http.Get("http://" + env.adminAddr + "/api/v1/tunnels")
+	adminReq, _ := http.NewRequest("GET", "http://"+env.adminAddr+"/api/v1/tunnels", nil)
+	adminReq.Header.Set("Authorization", "Bearer "+env.jwtToken)
+	adminResp, err := http.DefaultClient.Do(adminReq)
 	if err != nil {
 		t.Fatalf("admin GET tunnels: %v", err)
 	}
@@ -795,7 +809,9 @@ func TestE2E_15_MetricsIncrement(t *testing.T) {
 
 	// Check tunnel metrics via admin API.
 	time.Sleep(100 * time.Millisecond)
-	adminResp, err := http.Get("http://" + env.adminAddr + "/api/v1/tunnels")
+	adminReq, _ := http.NewRequest("GET", "http://"+env.adminAddr+"/api/v1/tunnels", nil)
+	adminReq.Header.Set("Authorization", "Bearer "+env.jwtToken)
+	adminResp, err := http.DefaultClient.Do(adminReq)
 	if err != nil {
 		t.Fatalf("admin tunnels: %v", err)
 	}
@@ -846,7 +862,9 @@ func TestE2E_16_MetricsEndpoint(t *testing.T) {
 	}
 
 	// Query metrics endpoint.
-	resp, err := http.Get("http://" + env.adminAddr + "/api/v1/metrics")
+	metricsReq, _ := http.NewRequest("GET", "http://"+env.adminAddr+"/api/v1/metrics", nil)
+	metricsReq.Header.Set("Authorization", "Bearer "+env.jwtToken)
+	resp, err := http.DefaultClient.Do(metricsReq)
 	if err != nil {
 		t.Fatalf("metrics: %v", err)
 	}
