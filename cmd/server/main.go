@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fonzygrok/fonzygrok/internal/config"
 	"github.com/fonzygrok/fonzygrok/internal/server"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 	"github.com/spf13/cobra"
@@ -46,6 +47,7 @@ func serveCmd() *cobra.Command {
 		domain     string
 		tlsEnabled bool
 		tlsCertDir string
+		configPath string
 	)
 
 	cmd := &cobra.Command{
@@ -56,31 +58,49 @@ func serveCmd() *cobra.Command {
 				Level: slog.LevelInfo,
 			}))
 
-			// Default TLS cert dir under data dir if not specified.
-			if tlsEnabled && tlsCertDir == "" {
-				tlsCertDir = dataDir + "/certs"
+			// Load config file if specified.
+			fileCfg, err := config.LoadServerConfig(configPath)
+			if err != nil {
+				logger.Error("failed to load config", "error", err)
+				return err
 			}
 
-			config := server.ServerConfig{
+			// Merge: file values as defaults, flags override.
+			flagCfg := &config.ServerConfig{
 				DataDir: dataDir,
 				Domain:  domain,
+				SSH:     config.SSHSection{Addr: sshAddr},
+				HTTP:    config.HTTPSection{Addr: httpAddr, TLS: tlsEnabled, TLSCertDir: tlsCertDir},
+				Admin:   config.AdminSection{Addr: adminAddr},
+			}
+			merged := config.MergeServerConfig(fileCfg, flagCfg)
+
+			// Default TLS cert dir under data dir if not specified.
+			if merged.HTTP.TLS && merged.HTTP.TLSCertDir == "" {
+				merged.HTTP.TLSCertDir = merged.DataDir + "/certs"
+			}
+
+			// Translate config.ServerConfig → server.ServerConfig.
+			srvConfig := server.ServerConfig{
+				DataDir: merged.DataDir,
+				Domain:  merged.Domain,
 				SSH: server.SSHConfig{
-					Addr: sshAddr,
+					Addr: merged.SSH.Addr,
 				},
 				Edge: server.EdgeConfig{
-					Addr: httpAddr,
+					Addr: merged.HTTP.Addr,
 				},
 				Admin: server.AdminConfig{
-					Addr: adminAddr,
+					Addr: merged.Admin.Addr,
 				},
 				TLS: server.TLSConfig{
-					Enabled: tlsEnabled,
-					CertDir: tlsCertDir,
-					Domain:  domain,
+					Enabled: merged.HTTP.TLS,
+					CertDir: merged.HTTP.TLSCertDir,
+					Domain:  merged.Domain,
 				},
 			}
 
-			srv, err := server.NewServer(config, logger)
+			srv, err := server.NewServer(srvConfig, logger)
 			if err != nil {
 				logger.Error("failed to create server", "error", err)
 				return err
@@ -110,6 +130,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&domain, "domain", "tunnel.localhost", "Base domain for tunnel routing")
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
 	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file")
 
 	return cmd
 }
