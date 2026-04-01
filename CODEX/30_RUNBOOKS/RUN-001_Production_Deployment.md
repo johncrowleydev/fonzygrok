@@ -9,7 +9,7 @@ tags: [deployment, docker, production, runbook]
 related: [GOV-008, BLU-001]
 created: 2026-03-31
 updated: 2026-03-31
-version: 1.0.0
+version: 2.0.0
 ---
 
 # Production Deployment: fonzygrok on Ubuntu EC2 + Docker
@@ -54,7 +54,8 @@ You need **4 inbound rules**. This is critical — if you miss one, something wo
 |:-----|:-----|:-------|:----|
 | SSH | 22 | Your IP (or `0.0.0.0/0`) | So you can SSH into the server |
 | Custom TCP | 2222 | `0.0.0.0/0` | fonzygrok SSH tunnel port (clients connect here) |
-| HTTP | 80 | `0.0.0.0/0` | Public tunnel traffic (edge router) |
+| HTTP | 80 | `0.0.0.0/0` | HTTP redirect + ACME challenge (TLS) or edge traffic |
+| HTTPS | 443 | `0.0.0.0/0` | Public tunnel traffic (TLS edge router) |
 | Custom TCP | 9090 | Your IP only | Admin API (token management) — **NOT** `0.0.0.0/0` |
 
 > ⚠️ **Port 9090 should be restricted to your IP only.** It has no authentication — anyone with access can create/delete tokens.
@@ -153,8 +154,10 @@ Set these values in the `.env` file:
 DOMAIN=tunnel.fonzygrok.com
 SSH_PORT=2222
 HTTP_PORT=80
+HTTPS_PORT=443
 ADMIN_PORT=9090
-FONZYGROK_VERSION=v1.0.0
+TLS_ENABLED=true
+FONZYGROK_VERSION=v1.1.0
 ```
 
 > **Key change:** `HTTP_PORT=80` (not 8080). You want public traffic on port 80 so browsers work without specifying a port.
@@ -287,7 +290,116 @@ You should see the response from your local Python server. 🎉
 
 ---
 
-## Phase 6: Verification Checklist
+## Phase 6: TLS Configuration (v1.1+)
+
+### Enable auto-TLS
+
+Update `docker-compose.yml` command to include TLS flags:
+
+```yaml
+command:
+  - serve
+  - --data-dir=/data
+  - --tls
+  - --tls-cert-dir=/data/certs
+  - --domain=tunnel.fonzygrok.com
+  - --ssh-addr=:2222
+  - --http-addr=:8080
+  - --admin-addr=0.0.0.0:9090
+```
+
+### How it works
+
+- **Port 443**: HTTPS with auto-provisioned Let's Encrypt certificates
+- **Port 80**: HTTP redirect to HTTPS + ACME HTTP-01 challenge handler
+- **Cert cache**: `/data/certs` (persisted via Docker volume, survives restarts)
+- **Host policy**: accepts `tunnel.fonzygrok.com` and `*.tunnel.fonzygrok.com`
+
+### Prerequisites
+
+> DNS must be configured before enabling TLS. autocert requires the domain to resolve to the server for HTTP-01 challenge validation.
+
+### Verify TLS
+
+```bash
+# Valid HTTPS cert
+curl -v https://tunnel.fonzygrok.com/
+
+# HTTP redirects to HTTPS
+curl -v http://tunnel.fonzygrok.com/
+# Should show Location: https://...
+```
+
+---
+
+## Phase 7: Custom Subdomain Names (v1.1+)
+
+### Client usage
+
+```bash
+# Custom name
+./bin/fonzygrok --server fonzygrok.com:2222 --token fgk_XXX --port 3000 --name my-api
+# → https://my-api.tunnel.fonzygrok.com
+
+# Auto-generated name (adjective-noun format)
+./bin/fonzygrok --server fonzygrok.com:2222 --token fgk_XXX --port 3000
+# → https://calm-tiger.tunnel.fonzygrok.com
+```
+
+### Reserved names (blocked)
+
+`www`, `api`, `admin`, `app`, `mail`, `ftp`, `ssh`, `dns`, `ns1`, `ns2`, `smtp`, `imap`, `pop`, `cdn`, `static`, `assets`, `docs`, `blog`, `status`, `health`, `tunnel`
+
+### Name rules
+
+- 3–32 characters, lowercase alphanumeric + hyphens
+- No leading/trailing hyphens
+- Must be unique (first-come, first-served)
+- Released when tunnel disconnects
+
+---
+
+## Phase 8: Monitoring & Metrics (v1.1+)
+
+### Health check
+
+```bash
+curl http://localhost:9090/api/v1/health
+# {"status":"healthy","version":"v1.1.0","uptime_seconds":3600}
+```
+
+### Aggregate metrics
+
+```bash
+curl http://localhost:9090/api/v1/metrics
+# {
+#   "total_bytes_in": 1452300,
+#   "total_bytes_out": 8923410,
+#   "total_requests_proxied": 470,
+#   "active_tunnels": 3,
+#   "active_clients": 2,
+#   "uptime_seconds": 3600
+# }
+```
+
+### Per-tunnel metrics
+
+```bash
+curl http://localhost:9090/api/v1/tunnels
+# Each tunnel includes: bytes_in, bytes_out, requests_proxied, last_request_at
+```
+
+### Key metrics to monitor
+
+| Metric | Alert Threshold | Action |
+|:-------|:---------------|:-------|
+| `active_tunnels` | > 100 | Scale or rate-limit |
+| `uptime_seconds` | resets unexpectedly | Check crash logs |
+| `total_bytes_out` | > 10GB/hour | Check for abuse |
+
+---
+
+## Phase 9: Verification Checklist
 
 Run through these to confirm everything works:
 
