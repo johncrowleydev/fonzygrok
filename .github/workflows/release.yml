@@ -66,3 +66,45 @@ jobs:
             dist/fonzygrok-server-windows-amd64.exe
             dist/fonzygrok-windows-amd64.exe
             dist/checksums.txt
+
+  deploy:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          # Write SSH key
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Deploy: pull tag, rebuild, restart
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'DEPLOY_SCRIPT'
+            set -e
+            cd ~/fonzygrok
+            git fetch origin --tags
+            git checkout ${{ github.ref_name }}
+            cd docker
+            docker compose down
+            docker compose up -d --build
+            echo "Deploy complete: ${{ github.ref_name }}"
+          DEPLOY_SCRIPT
+
+          # Cleanup
+          rm -f ~/.ssh/deploy_key
+
+      - name: Post-deploy health check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          echo "Waiting for server to start..."
+          sleep 15
+          curl -sf "http://$DEPLOY_HOST:9090/api/v1/health" || {
+            echo "❌ Health check failed!"
+            exit 1
+          }
+          echo "✅ Health check passed"
