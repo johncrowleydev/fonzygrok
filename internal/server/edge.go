@@ -263,10 +263,14 @@ func (e *EdgeRouter) proxyRequest(w http.ResponseWriter, r *http.Request, entry 
 		return
 	}
 
-	// Signal that we're done writing the request (half-close).
-	if cw, ok := ch.(interface{ CloseWrite() error }); ok {
-		cw.CloseWrite()
-	}
+	// NOTE: We intentionally do NOT call ch.CloseWrite() here.
+	// The HTTP request has well-defined message boundaries (Content-Length
+	// or chunked encoding), so the client can detect end-of-request from
+	// the HTTP protocol. Calling CloseWrite() sends an SSH EOF that races
+	// with the client reading the request over real networks — the client
+	// sees EOF before it finishes reading, causing the response to never
+	// be written back, resulting in "unexpected EOF" on the server side.
+	// See DEF-003 for the full root cause analysis.
 
 	// Read the response from the channel with timeout.
 	type responseResult struct {

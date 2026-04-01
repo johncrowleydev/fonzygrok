@@ -34,6 +34,9 @@ RUN adduser -D -u 10001 fonzygrok
 COPY --from=builder /out/fonzygrok-server /usr/local/bin/fonzygrok-server
 COPY --from=builder /out/fonzygrok-client /usr/local/bin/fonzygrok-client
 
+# Copy entrypoint script (TLS toggle via TLS_ENABLED env var).
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+
 # Create data and certs directories.
 RUN mkdir -p /data /data/certs && chown -R fonzygrok:fonzygrok /data
 
@@ -46,5 +49,5 @@ VOLUME /data
 # Run as non-root.
 USER fonzygrok
 
-ENTRYPOINT ["fonzygrok-server"]
-CMD ["serve", "--data-dir", "/data", "--ssh-addr", ":2222", "--http-addr", ":8080", "--admin-addr", "0.0.0.0:9090"]
+ENTRYPOINT ["entrypoint.sh"]
+CMD []

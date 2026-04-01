@@ -17,13 +17,9 @@ services:
       - fonzygrok-certs:/data/certs
     environment:
       - DOMAIN=${DOMAIN:-tunnel.localhost}
-    command:
-      - serve
-      - --data-dir=/data
-      - --ssh-addr=:2222
-      - --http-addr=:8080
-      - --admin-addr=0.0.0.0:9090
-      - --domain=${DOMAIN:-tunnel.localhost}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: []
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/api/v1/health"]
       interval: 10s
