@@ -34,6 +34,8 @@ func newRootCmd() *cobra.Command {
 		insecure   bool
 		name       string
 		configPath string
+		inspect    string
+		noInspect  bool
 	)
 
 	cmd := &cobra.Command{
@@ -67,7 +69,7 @@ Examples:
 			}
 			merged := config.MergeClientConfig(fileCfg, flagCfg)
 
-			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name)
+			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name, inspect, noInspect)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -80,6 +82,8 @@ Examples:
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip host key verification")
 	cmd.Flags().StringVar(&name, "name", "", "Custom subdomain name for the tunnel URL")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file (auto-detects ~/.fonzygrok.yaml)")
+	cmd.Flags().StringVar(&inspect, "inspect", "localhost:4040", "Inspector web UI listen address")
+	cmd.Flags().BoolVar(&noInspect, "no-inspect", false, "Disable the request inspector")
 
 	// Wire up env var defaults. cobra doesn't do this natively.
 	if env := os.Getenv("FONZYGROK_SERVER"); env != "" && serverAddr == "" {
@@ -95,7 +99,7 @@ Examples:
 }
 
 // runTunnel is the core logic: connect, request tunnel, proxy traffic.
-func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string) error {
+func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string, inspectAddr string, noInspect bool) error {
 	// Resolve env vars for server + token if flags were empty.
 	if serverAddr == "" {
 		serverAddr = os.Getenv("FONZYGROK_SERVER")
@@ -138,10 +142,21 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 		slog.Int("local_port", port),
 	)
 
+	// Start inspector if enabled.
+	var inspector *client.Inspector
+	if !noInspect {
+		inspector = client.NewInspector(inspectAddr, logger)
+		go func() {
+			if err := inspector.Start(ctx); err != nil {
+				logger.Warn("inspector stopped", slog.String("error", err.Error()))
+			}
+		}()
+	}
+
 	// ConnectWithRetry handles the full lifecycle:
 	// connect → open control → request tunnel → proxy → reconnect on failure.
 	err := connector.ConnectWithRetry(ctx, func() error {
-		return onConnect(ctx, connector, port, name, logger)
+		return onConnect(ctx, connector, port, name, inspector, logger)
 	})
 
 	if err != nil && err != context.Canceled {
@@ -155,7 +170,7 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 // onConnect is called after each successful SSH connection.
 // It opens the control channel, requests a tunnel, and starts the proxy.
-func onConnect(ctx context.Context, connector *client.Connector, port int, name string, logger *slog.Logger) error {
+func onConnect(ctx context.Context, connector *client.Connector, port int, name string, inspector *client.Inspector, logger *slog.Logger) error {
 	// Open control channel.
 	cc, err := connector.OpenControl()
 	if err != nil {
@@ -174,7 +189,11 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 		fmt.Fprintf(os.Stderr, "  ↳ Name: %s\n", assignment.Name)
 	}
 	fmt.Fprintf(os.Stderr, "  ↳ Public URL: %s\n", assignment.PublicURL)
-	fmt.Fprintf(os.Stderr, "  ↳ Forwarding: %s → localhost:%d\n\n", assignment.PublicURL, port)
+	fmt.Fprintf(os.Stderr, "  ↳ Forwarding: %s → localhost:%d\n", assignment.PublicURL, port)
+	if inspector != nil {
+		fmt.Fprintf(os.Stderr, "  ↳ Inspector: http://%s\n", inspector.Addr())
+	}
+	fmt.Fprintf(os.Stderr, "\n")
 
 	logger.Info("tunnel active",
 		slog.String("tunnel_id", assignment.TunnelID),
@@ -185,6 +204,9 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 
 	// Start proxy to handle incoming channels.
 	proxy := client.NewLocalProxy(port, logger)
+	if inspector != nil {
+		proxy.Inspector = inspector
+	}
 
 	sshClient := connector.SSHClient()
 	if sshClient == nil {

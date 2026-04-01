@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fonzygrok Inspector</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>⚡ Fonzygrok Inspector</h1>
+        </div>
+        <div class="header-right">
+            <span id="status" class="status connected">● Connected</span>
+            <button id="clearBtn" class="btn btn-clear">Clear</button>
+        </div>
+    </header>
+    <div class="toolbar">
+        <input id="filterInput" type="text" placeholder="Filter by path..." class="filter-input">
+        <select id="statusFilter" class="status-select">
+            <option value="">All Status</option>
+            <option value="2">2xx</option>
+            <option value="3">3xx</option>
+            <option value="4">4xx</option>
+            <option value="5">5xx</option>
+        </select>
+        <span id="requestCount" class="request-count">0 requests</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-time">Time</th>
+                    <th class="col-method">Method</th>
+                    <th class="col-path">Path</th>
+                    <th class="col-status">Status</th>
+                    <th class="col-duration">Duration</th>
+                    <th class="col-size">Size</th>
+                </tr>
+            </thead>
+            <tbody id="requestTable"></tbody>
+        </table>
+    </div>
+    <div id="detailPanel" class="detail-panel hidden">
+        <div class="detail-header">
+            <h3 id="detailTitle">Request Details</h3>
+            <button id="closeDetail" class="btn btn-close">✕</button>
+        </div>
+        <div class="detail-body">
+            <div class="detail-section">
+                <h4>Request Headers</h4>
+                <pre id="reqHeaders"></pre>
+            </div>
+            <div class="detail-section">
+                <h4>Response Headers</h4>
+                <pre id="respHeaders"></pre>
+            </div>
+            <div class="detail-section">
+                <h4>Body Preview</h4>
+                <pre id="bodyPreview"></pre>
+            </div>
+        </div>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>
