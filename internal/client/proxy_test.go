@@ -278,7 +278,11 @@ func (mc *mockChannel) Close() error {
 }
 
 func (mc *mockChannel) CloseWrite() error {
-	// net.Pipe doesn't support half-close, so just return nil.
+	// Support half-close for TCP connections (needed for slow service tests).
+	if tc, ok := mc.conn.(*net.TCPConn); ok {
+		return tc.CloseWrite()
+	}
+	// net.Pipe doesn't support half-close — return nil.
 	return nil
 }
 
@@ -289,3 +293,219 @@ func (mc *mockChannel) SendRequest(name string, wantReply bool, payload []byte) 
 func (mc *mockChannel) Stderr() io.ReadWriter {
 	return io.Discard.(io.ReadWriter)
 }
+
+// TestProxySlowLocalService verifies the proxy handles a deliberately slow
+// local service (~500ms response delay) without timing-dependent failures.
+// Per DEF-003 investigation: surfaces latency-dependent bugs in the
+// bidirectional copy pipeline.
+// Refs: DEF-003, SPR-015B T-049
+func TestProxySlowLocalService(t *testing.T) {
+	// Start a local HTTP server that sleeps before responding.
+	localSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.Header().Set("X-Slow", "true")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "slow response body")
+	}))
+	defer localSrv.Close()
+
+	_, portStr, _ := net.SplitHostPort(localSrv.Listener.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	proxy := NewLocalProxy(localPort, slog.Default())
+
+	// Use TCP pair for proper half-close support.
+	serverConn, clientConn := tcpPipe(t)
+	defer serverConn.Close()
+
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleSingleChannel(mockCh)
+		close(done)
+	}()
+
+	// Write request then half-close write side (like server's CloseWrite).
+	httpReq := "GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	_, err := serverConn.Write([]byte(httpReq))
+	if err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	serverConn.(*net.TCPConn).CloseWrite()
+
+	// Read the response — must arrive despite 500ms delay.
+	var buf bytes.Buffer
+	serverConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	io.Copy(&buf, serverConn)
+
+	<-done
+
+	resp := buf.String()
+	if !strings.Contains(resp, "200 OK") {
+		t.Errorf("expected 200 OK, got: %q", resp)
+	}
+	if !strings.Contains(resp, "slow response body") {
+		t.Errorf("expected 'slow response body', got: %q", resp)
+	}
+	if !strings.Contains(resp, "X-Slow: true") {
+		t.Errorf("expected X-Slow header, got: %q", resp)
+	}
+}
+
+// TestProxyWithInspectorSlowService verifies that the TeeReader wrapping
+// for inspector capture does NOT interfere with the proxy pipeline when
+// the local service is slow.
+// Refs: DEF-003, SPR-015B T-049
+func TestProxyWithInspectorSlowService(t *testing.T) {
+	// Slow HTTP server (200ms).
+	localSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "inspector-proxied response")
+	}))
+	defer localSrv.Close()
+
+	_, portStr, _ := net.SplitHostPort(localSrv.Listener.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	// Create proxy WITH inspector attached.
+	inspector := NewInspector("127.0.0.1:0", slog.Default())
+	proxy := NewLocalProxy(localPort, slog.Default())
+	proxy.Inspector = inspector
+
+	serverConn, clientConn := tcpPipe(t)
+	defer serverConn.Close()
+
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleSingleChannel(mockCh)
+		close(done)
+	}()
+
+	httpReq := "GET /test-inspect HTTP/1.1\r\nHost: localhost\r\nX-Test: inspector\r\n\r\n"
+	serverConn.Write([]byte(httpReq))
+	serverConn.(*net.TCPConn).CloseWrite()
+
+	var buf bytes.Buffer
+	serverConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	io.Copy(&buf, serverConn)
+
+	<-done
+
+	resp := buf.String()
+	if !strings.Contains(resp, "inspector-proxied response") {
+		t.Errorf("expected 'inspector-proxied response', got: %q", resp)
+	}
+
+	// Verify inspector captured the request.
+	entries := inspector.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 inspector entry, got %d", len(entries))
+	}
+	if entries[0].Method != "GET" {
+		t.Errorf("inspector entry Method = %q, want %q", entries[0].Method, "GET")
+	}
+	if entries[0].Path != "/test-inspect" {
+		t.Errorf("inspector entry Path = %q, want %q", entries[0].Path, "/test-inspect")
+	}
+	if entries[0].StatusCode != 200 {
+		t.Errorf("inspector entry StatusCode = %d, want 200", entries[0].StatusCode)
+	}
+}
+
+// TestProxyLargeResponseSlowService verifies proxy with a large response body
+// and artificial latency — catches buffering issues over real networks.
+// Refs: DEF-003, SPR-015B T-049
+func TestProxyLargeResponseSlowService(t *testing.T) {
+	// 64KB response body with 100ms delay.
+	largeBody := strings.Repeat("X", 64*1024)
+	localSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, largeBody)
+	}))
+	defer localSrv.Close()
+
+	_, portStr, _ := net.SplitHostPort(localSrv.Listener.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	proxy := NewLocalProxy(localPort, slog.Default())
+
+	serverConn, clientConn := tcpPipe(t)
+	defer serverConn.Close()
+
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleSingleChannel(mockCh)
+		close(done)
+	}()
+
+	httpReq := "GET /large HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	serverConn.Write([]byte(httpReq))
+	serverConn.(*net.TCPConn).CloseWrite()
+
+	var buf bytes.Buffer
+	serverConn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	io.Copy(&buf, serverConn)
+
+	<-done
+
+	resp := buf.String()
+	if !strings.Contains(resp, "200 OK") {
+		t.Errorf("expected 200 OK in response")
+	}
+	// The full 64KB body should be in the response.
+	if !strings.Contains(resp, largeBody) {
+		t.Errorf("response should contain full 64KB body, got %d bytes total", len(resp))
+	}
+}
+
+// tcpPipe creates a pair of connected TCP connections that support proper
+// half-close (CloseWrite). net.Pipe does NOT support half-close, which makes
+// it unsuitable for testing bidirectional proxy copy with EOF signaling.
+func tcpPipe(t *testing.T) (net.Conn, net.Conn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("tcpPipe: listen: %v", err)
+	}
+	defer ln.Close()
+
+	var serverConn net.Conn
+	accepted := make(chan struct{})
+	go func() {
+		var err error
+		serverConn, err = ln.Accept()
+		if err != nil {
+			t.Errorf("tcpPipe: accept: %v", err)
+		}
+		close(accepted)
+	}()
+
+	clientConn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("tcpPipe: dial: %v", err)
+	}
+
+	<-accepted
+	return serverConn, clientConn
+}
+
