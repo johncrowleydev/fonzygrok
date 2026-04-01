@@ -89,5 +89,40 @@ func (s *Store) Migrate() error {
 		}
 	}
 
+	// Post-migration: add user_id column to tokens if missing.
+	// SQLite lacks ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we
+	// check PRAGMA table_info first. This handles existing v1.1 DBs.
+	if err := s.addColumnIfMissing("tokens", "user_id", "TEXT REFERENCES users(id)"); err != nil {
+		return fmt.Errorf("store: add user_id to tokens: %w", err)
+	}
+
 	return nil
+}
+
+// addColumnIfMissing adds a column to a table only if it doesn't already exist.
+// DECISION: Use PRAGMA table_info instead of catching ALTER TABLE errors,
+// because SQLite error messages for duplicate columns are not standardized.
+func (s *Store) addColumnIfMissing(table, column, columnDef string) error {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("pragma table_info(%s): %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue interface{}
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("scan table_info: %w", err)
+		}
+		if name == column {
+			return nil // Column already exists.
+		}
+	}
+
+	// Column doesn't exist — add it.
+	_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnDef))
+	return err
 }

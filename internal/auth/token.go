@@ -30,7 +30,7 @@ const tokenAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 // The raw token has the format "fgk_" + 32 lowercase alphanumeric characters.
 // Returns (id, rawToken).
 func GenerateToken() (string, string) {
-	id := TokenIDPrefix + randomHex(TokenIDRandomLen)
+	id := TokenIDPrefix + RandomHex(TokenIDRandomLen)
 	raw := TokenPrefix + randomAlphanumeric(TokenRandomLen)
 	return id, raw
 }
@@ -42,8 +42,8 @@ func HashToken(raw string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// randomHex generates n random hex characters using crypto/rand.
-func randomHex(n int) string {
+// RandomHex generates n random hex characters using crypto/rand.
+func RandomHex(n int) string {
 	// Each byte produces 2 hex characters, so we need n/2 bytes (rounded up).
 	byteLen := (n + 1) / 2
 	b := make([]byte, byteLen)

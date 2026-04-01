@@ -10,10 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/config"
 	"github.com/fonzygrok/fonzygrok/internal/server"
 	"github.com/fonzygrok/fonzygrok/internal/store"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // version is set at build time via -ldflags.
@@ -31,6 +33,7 @@ func main() {
 
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(tokenCmd())
+	rootCmd.AddCommand(adminCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -280,3 +283,82 @@ func openStore(dataDir string) (*store.Store, error) {
 	}
 	return st, nil
 }
+
+// adminCmd provides admin user management subcommands.
+func adminCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "admin",
+		Short: "Manage admin users",
+	}
+
+	cmd.AddCommand(adminCreateCmd())
+	return cmd
+}
+
+// adminCreateCmd creates the first admin user.
+func adminCreateCmd() *cobra.Command {
+	var (
+		username string
+		email    string
+		dataDir  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an admin user",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore(dataDir)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+
+			// Check if username already exists.
+			if existing, _ := st.GetUserByUsername(username); existing != nil {
+				return fmt.Errorf("user %q already exists (ID: %s)", username, existing.ID)
+			}
+
+			// Prompt for password (no echo).
+			fmt.Print("Password: ")
+			passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println() // Newline after hidden input.
+			if err != nil {
+				return fmt.Errorf("read password: %w", err)
+			}
+			password := string(passwordBytes)
+
+			// Validate password strength.
+			if err := auth.ValidatePasswordStrength(password); err != nil {
+				return err
+			}
+
+			// Hash password.
+			hash, err := auth.HashPassword(password)
+			if err != nil {
+				return err
+			}
+
+			// Create admin user.
+			user, err := st.CreateUser(username, email, hash, "admin")
+			if err != nil {
+				return fmt.Errorf("create admin: %w", err)
+			}
+
+			fmt.Printf("\nAdmin user created.\n\n")
+			fmt.Printf("  ID:       %s\n", user.ID)
+			fmt.Printf("  Username: %s\n", user.Username)
+			fmt.Printf("  Email:    %s\n", user.Email)
+			fmt.Printf("  Role:     %s\n", user.Role)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&username, "username", "", "Admin username (required)")
+	cmd.MarkFlagRequired("username")
+	cmd.Flags().StringVar(&email, "email", "", "Admin email (required)")
+	cmd.MarkFlagRequired("email")
+	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory")
+
+	return cmd
+}
+

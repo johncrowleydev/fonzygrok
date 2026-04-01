@@ -13,6 +13,7 @@ type Token struct {
 	ID         string
 	Name       string
 	TokenHash  string
+	UserID     *string // nullable — legacy tokens have no user
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 	IsActive   bool
@@ -21,14 +22,21 @@ type Token struct {
 // CreateToken generates a new token, stores it, and returns the Token
 // record along with the raw token string. The raw token is returned
 // exactly once — it is not stored in plaintext.
-func (s *Store) CreateToken(name string) (*Token, string, error) {
+// userID may be empty for legacy/unowned tokens.
+func (s *Store) CreateToken(name string, userID ...string) (*Token, string, error) {
 	id, rawToken := auth.GenerateToken()
 	hash := auth.HashToken(rawToken)
 	now := time.Now().UTC()
 
+	// Resolve optional userID parameter.
+	var uid *string
+	if len(userID) > 0 && userID[0] != "" {
+		uid = &userID[0]
+	}
+
 	_, err := s.db.Exec(
-		`INSERT INTO tokens (id, name, token_hash, created_at, is_active) VALUES (?, ?, ?, ?, 1)`,
-		id, name, hash, now.Format(time.RFC3339),
+		`INSERT INTO tokens (id, name, token_hash, user_id, created_at, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
+		id, name, hash, uid, now.Format(time.RFC3339),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("store: create token: %w", err)
@@ -38,6 +46,7 @@ func (s *Store) CreateToken(name string) (*Token, string, error) {
 		ID:        id,
 		Name:      name,
 		TokenHash: hash,
+		UserID:    uid,
 		CreatedAt: now,
 		IsActive:  true,
 	}
