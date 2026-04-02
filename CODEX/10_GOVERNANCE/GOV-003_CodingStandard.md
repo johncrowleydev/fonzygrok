@@ -8,8 +8,8 @@ agents: [all]
 tags: [coding, standards, governance, quality, safety]
 related: [GOV-001, GOV-002]
 created: 2026-03-04
-updated: 2026-03-05
-version: 2.2.0
+updated: 2026-04-02
+version: 2.3.0
 ---
 
 > **BLUF:** NASA/JPL-grade polyglot coding standard for agent-written code. Covers Python, C/C++, and React/TypeScript. Enforces NASA Power of 10, MISRA C:2025, DO-178C code review mandates, dead code prohibition, boundary condition requirements, incident-readability enhancements (inline ADRs, panic breadcrumbs, contract/failure-mode annotations), WCAG 2.1 AA accessibility, deterministic testability (`data-testid`), and the Disaster-Readability Principle. While 99% of this code will never be read by humans, it MUST be written so that in a disaster, a human engineer can understand any function in 30 seconds.
@@ -852,6 +852,105 @@ Before submitting code in **any language**:
 - [ ] **React/TS only:** ARIA attributes present on all components (§8.3)
 - [ ] **React/TS only:** `data-testid` attributes on all component roots and key sub-elements (§8.4)
 - [ ] **React/TS only:** Multi-line className formatting for long utility strings (§8.7)
+
+---
+
+## 14. Secret Management (Mandatory)
+
+> [!WARNING]
+> **Added in response to DEF-005.** Private SSH keys, the production database
+> (containing password hashes and API tokens), and the SSH host key were
+> committed to a public GitHub repository. This section codifies the rules
+> that prevent this from ever happening again.
+
+### 14.1 The Cardinal Rule
+
+**Credentials, keys, and secrets MUST NEVER be committed to version control** — not even temporarily, not even in private repos. Once a secret enters git history, it persists across all clones and forks until a destructive history rewrite is performed.
+
+### 14.2 What Counts as a Secret
+
+| Category | Examples |
+|:---------|:---------|
+| **Private keys** | `*.pem`, `*.key`, `id_rsa`, `id_ed25519`, `host_key`, `*.p12`, `*.pfx` |
+| **Database files** | `*.db`, `*.sqlite`, `*.db-wal`, `*.db-shm` — contain credentials and user data |
+| **Environment files** | `.env`, `.env.local`, `.env.production` |
+| **Token/secret files** | `jwt_secret`, `*.secret`, API keys |
+| **Certificates** | `*.crt`, `*.cer` (public certs are fine, but don't mix with keys) |
+
+### 14.3 Mandatory `.gitignore` Patterns
+
+Every project MUST include the following `.gitignore` patterns from day one:
+
+```gitignore
+# Private keys — ALL formats
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+id_ecdsa*
+host_key*
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+*.secret
+jwt_secret*
+
+# Runtime/temp directories
+tmp/
+temp/
+```
+
+### 14.4 Pre-Commit Hook (Mandatory)
+
+Every project MUST include a pre-commit hook that:
+1. Blocks commits containing files matching dangerous filename patterns
+2. Scans file contents for private key headers (`BEGIN RSA PRIVATE KEY`, etc.)
+3. Blocks commits adding files to `tmp/` directories
+
+The hook lives in `.githooks/pre-commit` and is activated via:
+```bash
+git config core.hooksPath .githooks
+```
+
+### 14.5 Where Secrets Go Instead
+
+| Secret Type | Storage Location |
+|:------------|:-----------------|
+| Deploy keys | CI/CD secret store (e.g., GitHub Secrets) |
+| Host keys | Generated at server startup, persisted in data dir (never committed) |
+| JWT secrets | Generated at server startup, persisted in data dir (never committed) |
+| API tokens | Database only (hashed) |
+| Passwords | Database only (bcrypt-hashed) |
+| `.env` values | Copy from `.env.example` (which IS committed), fill in locally |
+
+### 14.6 GitHub Repository Settings
+
+All repositories MUST enable:
+- **Secret scanning** — detects accidentally committed secrets
+- **Push protection** — blocks pushes containing detected secrets
+
+### 14.7 Incident Response
+
+If a secret is committed to git:
+1. **Do NOT just delete the file** — it remains in git history
+2. Immediately rotate all exposed credentials
+3. Remove from tracking: `git rm --cached <file>`
+4. Scrub git history: `git filter-repo --path <file> --invert-paths`
+5. Force push: `git push --force --all`
+6. File a `DEF-` report documenting the incident
 
 ---
 
