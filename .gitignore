@@ -27,6 +27,9 @@ coverage.html
 
 # Environment
 .env
+.env.local
+.env.production
+.env.*.local
 
 # IDE
 .idea/
@@ -39,5 +42,45 @@ coverage.html
 .DS_Store
 Thumbs.db
 
-# Keys
+# ─── SECURITY: Private Keys & Certificates ───────────────────────────────────
+# NEVER commit private keys, certificates, or credential files.
+# If you see a git diff adding any of these patterns, STOP and ask why.
 *.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+*.pub
+host_key
+host_key.*
+*.crt
+*.cer
+*.der
+
+# ─── SECURITY: Database Files ─────────────────────────────────────────────────
+# Database files contain credentials, tokens, and user data. NEVER commit them.
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ─── SECURITY: Secrets & Credentials ──────────────────────────────────────────
+*.secret
+*_secret
+jwt_secret*
+*.token
+
+# ─── tmp/ — NEVER TRACK ──────────────────────────────────────────────────────
+# tmp/ is for local dev/test runtime data. It must never be committed.
+# Contains: compiled binaries, databases, host keys, session data.
+tmp/
+temp/
