@@ -2,7 +2,7 @@
 id: DEF-001
 title: "Client outputs raw JSON logs instead of human-friendly messages"
 type: defect
-status: OPEN
+status: RESOLVED
 severity: HIGH
 owner: architect
 agents: [developer-b]

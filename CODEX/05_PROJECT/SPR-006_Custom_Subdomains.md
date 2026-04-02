@@ -2,13 +2,13 @@
 id: SPR-006
 title: "Custom Subdomains & Readable Names"
 type: sprint
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.1]
 related: [CON-001, CON-002, BLU-001, SPR-005]
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-02
 version: 1.0.0
 ---
 

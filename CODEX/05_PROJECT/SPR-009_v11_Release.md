@@ -2,7 +2,7 @@
 id: SPR-009
 title: "Sprint 009: v1.1 Integration & Release"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, integration, v1.1, release]

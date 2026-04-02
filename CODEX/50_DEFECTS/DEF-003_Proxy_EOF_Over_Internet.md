@@ -2,7 +2,7 @@
 id: DEF-003
 title: "Tunnel proxy returns unexpected EOF over internet"
 type: defect
-status: OPEN
+status: RESOLVED
 severity: CRITICAL
 owner: architect
 agents: [developer-a, developer-b]

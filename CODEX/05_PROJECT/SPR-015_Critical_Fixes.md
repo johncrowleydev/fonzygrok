@@ -2,13 +2,13 @@
 id: SPR-015
 title: "Sprint 015: Critical Bug Fixes — Proxy EOF + TLS + Smoke Tests"
 type: how-to
-status: ACTIVE
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, defect-fix, critical, proxy, tls, v1.1]
 related: [DEF-002, DEF-003, DEF-004]
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 

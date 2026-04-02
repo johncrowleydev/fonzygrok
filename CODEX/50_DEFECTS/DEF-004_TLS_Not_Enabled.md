@@ -2,7 +2,7 @@
 id: DEF-004
 title: "TLS not enabled in production Docker configuration"
 type: defect
-status: OPEN
+status: RESOLVED
 severity: HIGH
 owner: architect
 agents: [developer-a]

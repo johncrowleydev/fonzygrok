@@ -8,8 +8,8 @@ agents: [all]
 tags: [governance, standards, project-management, workflow]
 related: [GOV-001, GOV-002, GOV-003, GOV-004, GOV-006]
 created: 2026-03-04
-updated: 2026-03-04
-version: 2.0.0
+updated: 2026-04-02
+version: 2.1.0
 ---
 
 > **BLUF:** Project lifecycle protocol for human-Architect + AI-agent development. Replaces traditional Agile with scope-bounded sprints, emergent work items, one-agent-per-branch execution, natural checkpoints, and human-in-the-loop merge/deploy. The only human in the loop is the Architect. Everything else is agentic.
@@ -249,10 +249,19 @@ Deployment is agentic with Architect trigger.
 1. Agent prepares deployment on a `deploy/vX.Y.Z` branch
 2. Agent runs full verification suite against the deploy branch
 3. Agent presents deployment plan to Architect
-4. **Architect triggers deploy** — this is always a human decision
-5. Agent executes deployment steps
-6. Agent verifies deployment (health checks, smoke tests)
-7. Architect confirms success
+4. **Architect proposes tag to Human** — does NOT create tag unilaterally
+5. **Human performs UAT** (GOV-002 §18) — runs the binary, confirms it works
+6. **Human says "tag it"** — explicit written approval required
+7. Architect creates tag
+8. Agent executes deployment steps
+9. Agent runs production smoke tests (GOV-002 §18A) — from a different machine
+10. Smoke tests pass → deployment complete
+11. Smoke tests fail → rollback, file DEF-, fix, repeat
+
+> [!WARNING]
+> **Added in response to DEF-002.** v1.1 was tagged and deployed without Human
+> UAT and without post-deployment smoke tests. Both steps are now mandatory.
+> Violations are process defects documented in DEF- reports.
 
 ### 8.2 Version Numbering
 

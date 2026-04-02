@@ -2,13 +2,13 @@
 id: SPR-014
 title: "Sprint 014: Client UX — Pretty Output + Verbose Mode"
 type: how-to
-status: ACTIVE
+status: COMPLETE
 owner: architect
 agents: [developer-b]
 tags: [sprint, defect-fix, ux, client, v1.1]
 related: [DEF-001]
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 

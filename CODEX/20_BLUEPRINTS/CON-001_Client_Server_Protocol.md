@@ -2,7 +2,7 @@
 id: CON-001
 title: "Client-Server Protocol Contract"
 type: reference
-status: DRAFT
+status: STABLE
 owner: architect
 agents: [all]
 tags: [standards, specification, networking, protocol, ssh]

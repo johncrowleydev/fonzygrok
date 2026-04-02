@@ -22,7 +22,7 @@
 
 schema_version: "1.0.0"
 project: "fonzygrok"
-generated: "2026-03-31"
+generated: "2026-04-02"
 
 # ── Area Definitions ──────────────────────────────────────────────────────────
 areas:
@@ -122,8 +122,9 @@ documents:
     tags: [project-management, backlog, development]
     agents: [coder]
     summary: >
-      Prioritized developer backlog with 22 items mapped across 7 sprints
-      for fonzygrok v1.0. Covers scaffolding through Docker deployment.
+      Prioritized developer backlog covering v1.0 through v1.2. v1.0 and v1.1
+      items complete. v1.2 items partially complete (auth, dashboard done;
+      TCP tunnels, rate limiting, ACL pending).
 
   - id: BCK-002
     path: 05_PROJECT/BCK-002_ArchitectBacklog.md
@@ -135,12 +136,13 @@ documents:
     summary: >
       Architect's own backlog — CODEX bootstrapping, sprint audits,
       integration testing, deployment verification, document maintenance.
+      v1.0/v1.1 items complete. Reconciliation and v1.2 items active.
 
   - id: SPR-001
     path: 05_PROJECT/SPR-001_Foundation.md
     title: "Sprint 001: Foundation — Scaffold, Storage & Auth"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, scaffolding, storage, auth]
     agents: [coder]
     summary: >
@@ -152,7 +154,7 @@ documents:
     path: 05_PROJECT/SPR-002A_SSH_Server.md
     title: "Sprint 002A: Server Track — SSH Server & Control Handler"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, ssh, server]
     agents: [coder]
     summary: >
@@ -163,7 +165,7 @@ documents:
     path: 05_PROJECT/SPR-002B_SSH_Client.md
     title: "Sprint 002B: Client Track — SSH Client & Control Sender"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, ssh, client]
     agents: [coder]
     summary: >
@@ -174,7 +176,7 @@ documents:
     path: 05_PROJECT/SPR-003A_HTTP_Edge.md
     title: "Sprint 003A: Server Track — HTTP Edge Router"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, http, routing, server]
     agents: [coder]
     summary: >
@@ -185,7 +187,7 @@ documents:
     path: 05_PROJECT/SPR-003B_CLI_Reconnect.md
     title: "Sprint 003B: Client Track — CLI, Auto-Reconnect & Logging"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, cli, reconnect, client]
     agents: [coder]
     summary: >
@@ -196,7 +198,7 @@ documents:
     path: 05_PROJECT/SPR-004A_Admin_Orchestrator.md
     title: "Sprint 004A: Server Track — Admin API & Server Orchestrator"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, api, server, orchestrator]
     agents: [coder]
     summary: >
@@ -207,7 +209,7 @@ documents:
     path: 05_PROJECT/SPR-005_Integration.md
     title: "Sprint 005: Merge — Integration, Docker & E2E Testing"
     type: how-to
-    status: PLANNING
+    status: COMPLETE
     tags: [project-management, sprint, workflow, integration, docker, testing]
     agents: [coder]
     summary: >
@@ -218,7 +220,7 @@ documents:
     path: 05_PROJECT/SPR-006_Custom_Subdomains.md
     title: "Sprint 006: Custom Subdomains & Readable Names"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.1]
     agents: [coder]
     summary: >
@@ -230,7 +232,7 @@ documents:
     path: 05_PROJECT/SPR-007_TLS_Config.md
     title: "Sprint 007: Auto-TLS & YAML Config Files"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.1, tls, config]
     agents: [coder]
     summary: >
@@ -241,7 +243,7 @@ documents:
     path: 05_PROJECT/SPR-008_Metrics_Inspector.md
     title: "Sprint 008: Connection Metrics & Request Inspection UI"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.1, metrics, ui]
     agents: [coder]
     summary: >
@@ -252,7 +254,7 @@ documents:
     path: 05_PROJECT/SPR-009_v11_Release.md
     title: "Sprint 009: v1.1 Integration & Release"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, integration, v1.1, release]
     agents: [coder]
     summary: >
@@ -307,24 +309,119 @@ documents:
     path: 05_PROJECT/SPR-014_Pretty_Output.md
     title: "Sprint 014: Client UX — Pretty Output + Verbose Mode"
     type: how-to
-    status: ACTIVE
+    status: COMPLETE
     tags: [sprint, defect-fix, ux, client, v1.1]
     agents: [developer-b]
     summary: >
       Fix DEF-001. Replace raw JSON client output with human-friendly
       formatted messages. Add --verbose flag for opt-in JSON logs.
 
+  - id: SPR-015
+    path: 05_PROJECT/SPR-015_Critical_Fixes.md
+    title: "Sprint 015: Critical Bug Fixes — Proxy EOF + TLS + Smoke Tests"
+    type: how-to
+    status: COMPLETE
+    tags: [sprint, defect-fix, critical, proxy, tls, v1.1]
+    agents: [developer-a, developer-b]
+    summary: >
+      Critical bug fix sprint: proxy EOF over internet (DEF-003),
+      TLS enablement in Docker (DEF-004), production smoke test script.
+      Tagged v1.1.2.
+
+  - id: SPR-016
+    path: 05_PROJECT/SPR-016_CICD_README.md
+    title: "Sprint 016: CI/CD Auto-Deploy + README Overhaul"
+    type: how-to
+    status: COMPLETE
+    tags: [sprint, ci-cd, documentation, infrastructure]
+    agents: [architect, developer-b]
+    summary: >
+      Release workflow auto-deploy to production on tag push.
+      Comprehensive README rewrite with client-first documentation.
+
+  - id: SPR-017
+    path: 05_PROJECT/SPR-017_User_Auth.md
+    title: "Sprint 017: User Model + Auth Backend"
+    type: how-to
+    status: COMPLETE
+    tags: [sprint, auth, users, backend, v1.2]
+    agents: [developer-a]
+    summary: >
+      User account system: users table, bcrypt password hashing,
+      JWT sessions, invite codes, admin bootstrap command.
+
+  - id: SPR-018
+    path: 05_PROJECT/SPR-018_API_Auth.md
+    title: "Sprint 018: API Endpoints + Auth Middleware"
+    type: how-to
+    status: COMPLETE
+    tags: [sprint, api, auth, middleware, v1.2]
+    agents: [developer-a]
+    summary: >
+      Authenticated REST API: registration, login, token management,
+      invite codes, JWT auth middleware protecting all endpoints.
+
+  - id: SPR-019
+    path: 05_PROJECT/SPR-019_Dashboard.md
+    title: "Sprint 019: Web Dashboard"
+    type: how-to
+    status: COMPLETE
+    tags: [sprint, dashboard, frontend, ui, v1.2]
+    agents: [developer-b]
+    summary: >
+      Server-rendered web dashboard: login, registration, token management,
+      admin views. Go templates + HTMX, dark theme, embedded assets.
+
   # ── 50_DEFECTS ──────────────────────────────────────────────────────────────
   - id: DEF-001
     path: 50_DEFECTS/DEF-001_Raw_JSON_Client_Output.md
     title: "Client outputs raw JSON logs instead of human-friendly messages"
     type: defect
-    status: OPEN
+    status: RESOLVED
     tags: [defect, ux, client, v1.1]
     agents: [developer-b]
     summary: >
       Client binary dumps raw JSON slog to stdout for all events.
       Users see a wall of JSON instead of clear formatted status messages.
+      Resolved in SPR-014.
+
+  - id: DEF-002
+    path: 50_DEFECTS/DEF-002_Process_Failure_RCA.md
+    title: "Root Cause Analysis: v1.1 Released with Multiple Critical Defects"
+    type: defect
+    status: RESOLVED
+    severity: CRITICAL
+    tags: [defect, process-failure, rca, governance, v1.1]
+    agents: [all]
+    summary: >
+      Process RCA for v1.1 shipping with 6 defects. Identifies root causes
+      (localhost-only testing, no smoke tests, shallow acceptance criteria,
+      architect role violations). Proposes governance updates to GOV-002,
+      GOV-005, GOV-007.
+
+  - id: DEF-003
+    path: 50_DEFECTS/DEF-003_Proxy_EOF_Over_Internet.md
+    title: "Tunnel proxy returns unexpected EOF over internet"
+    type: defect
+    status: RESOLVED
+    tags: [defect, proxy, networking, v1.1]
+    agents: [developer-a, developer-b]
+    summary: >
+      Tunnel proxying fails over real network (works localhost). Server
+      gets unexpected EOF reading SSH channel response. Resolved in
+      SPR-015A, tagged v1.1.2.
+
+  - id: DEF-004
+    path: 50_DEFECTS/DEF-004_TLS_Not_Enabled.md
+    title: "TLS not enabled in production Docker configuration"
+    type: defect
+    status: RESOLVED
+    tags: [defect, tls, docker, deployment, v1.1]
+    agents: [developer-a]
+    summary: >
+      Auto-TLS implemented but never enabled in Docker compose config.
+      Feature was dead code in production. Resolved in SPR-015A T-048,
+      tagged v1.1.2.
 
   # ── 10_GOVERNANCE ───────────────────────────────────────────────────────────
   - id: GOV-001
@@ -436,7 +533,7 @@ documents:
     path: 20_BLUEPRINTS/BLU-001_System_Architecture.md
     title: "Fonzygrok System Architecture Blueprint"
     type: explanation
-    status: DRAFT
+    status: APPROVED
     tags: [architecture, design, networking, tunneling, golang]
     agents: [all]
     summary: >
@@ -448,7 +545,7 @@ documents:
     path: 20_BLUEPRINTS/CON-001_Client_Server_Protocol.md
     title: "Client-Server Protocol Contract"
     type: reference
-    status: DRAFT
+    status: STABLE
     tags: [standards, specification, networking, protocol, ssh]
     agents: [all]
     summary: >
@@ -460,7 +557,7 @@ documents:
     path: 20_BLUEPRINTS/CON-002_HTTP_Edge_Admin_API.md
     title: "HTTP Edge & Admin API Contract"
     type: reference
-    status: DRAFT
+    status: STABLE
     tags: [standards, specification, api, http, routing]
     agents: [all]
     summary: >
@@ -481,6 +578,18 @@ documents:
       README), governance stack, compliance workflows, and DarkGravity swarm
       integration. Template orientation doc.
 
+  - id: ROAD-001
+    path: 20_BLUEPRINTS/ROAD-001_lessons_learned_update.md
+    title: "Lessons Learned Update — Template Improvements from LexFlow Build"
+    type: explanation
+    status: APPROVED
+    tags: [project-management, governance, agentic-development, lessons-learned]
+    agents: [all]
+    summary: >
+      12 improvements to the agentic_architect template from LexFlow build.
+      Adds GOV-008, enriches sprint/contract/agent templates, architect
+      backlog pattern, 3 new workflows, compliance tooling hardening.
+
   # ── 30_RUNBOOKS ────────────────────────────────────────────────────────────
   - id: RUN-DG-001
     path: 30_RUNBOOKS/RUN-DG-001_DarkGravity_Setup_Recovery.md
@@ -494,6 +603,17 @@ documents:
       Covers fresh install, auto-discovery via resolve_darkgravity.sh,
       API key setup, troubleshooting, and nuclear recovery.
 
+  - id: RUN-001
+    path: 30_RUNBOOKS/RUN-001_Production_Deployment.md
+    title: "Production Deployment — fonzygrok on Ubuntu EC2 + Docker"
+    type: how-to
+    status: ACTIVE
+    tags: [deployment, docker, production, runbook]
+    agents: [architect]
+    summary: >
+      Step-by-step production deployment runbook for fonzygrok on Ubuntu EC2
+      with Docker Compose. Covers setup, configuration, deployment, and
+      post-deployment verification.
   # ── 40_VERIFICATION ────────────────────────────────────────────────────────
   # (empty — add project-specific verification docs here)
 

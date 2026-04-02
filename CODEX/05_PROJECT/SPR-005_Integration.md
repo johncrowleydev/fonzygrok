@@ -2,13 +2,13 @@
 id: SPR-005
 title: "Merge — Integration, Docker & E2E Testing"
 type: how-to
-status: PLANNING
+status: COMPLETE
 owner: architect
 agents: [coder]
 tags: [project-management, sprint, workflow, integration, docker, testing]
 related: [BCK-001, GOV-008, CON-001, CON-002]
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-02
 version: 1.0.0
 ---
 

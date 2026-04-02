@@ -2,13 +2,13 @@
 id: SPR-018
 title: "Sprint 018: API Endpoints + Auth Middleware"
 type: how-to
-status: ACTIVE
+status: COMPLETE
 owner: architect
 agents: [developer-a]
 tags: [sprint, api, auth, middleware, v1.2]
 related: [SPR-017, SPR-019]
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 

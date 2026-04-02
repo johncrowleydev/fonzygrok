@@ -2,13 +2,13 @@
 id: SPR-016
 title: "Sprint 016: CI/CD Auto-Deploy + README Overhaul"
 type: how-to
-status: ACTIVE
+status: COMPLETE
 owner: architect
 agents: [architect, developer-b]
 tags: [sprint, ci-cd, documentation, infrastructure]
 related: []
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 

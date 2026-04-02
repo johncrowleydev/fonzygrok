@@ -2,13 +2,13 @@
 id: SPR-017
 title: "Sprint 017: User Model + Auth Backend"
 type: how-to
-status: ACTIVE
+status: COMPLETE
 owner: architect
 agents: [developer-a]
 tags: [sprint, auth, users, backend, v1.2]
 related: [SPR-018, SPR-019, SPR-020]
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 

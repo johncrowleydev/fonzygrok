@@ -2,7 +2,7 @@
 id: SPR-007
 title: "Sprint 007: Auto-TLS & YAML Config Files"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.1, tls, config]

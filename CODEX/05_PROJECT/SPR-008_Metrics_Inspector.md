@@ -2,7 +2,7 @@
 id: SPR-008
 title: "Sprint 008: Connection Metrics & Request Inspection UI"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.1, metrics, ui]

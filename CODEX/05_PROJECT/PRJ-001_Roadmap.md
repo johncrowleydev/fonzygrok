@@ -66,50 +66,65 @@ Success means: a developer can run `fonzygrok --port 3000` and immediately get a
 
 Phases are **scope-bounded**, not time-bounded. Each phase is complete when its exit criteria are met.
 
-### Phase 1: MVP (v1.0)
+### Phase 1: MVP (v1.0) ✅ COMPLETE
 **Goal:** A working tunnel server + client that routes HTTP traffic through an SSH tunnel.
 **Exit criteria:**
-- [ ] Server accepts SSH connections from authenticated clients
-- [ ] Client connects, registers a tunnel, receives a public subdomain
-- [ ] Public HTTP requests to the subdomain are proxied to the client's local port
-- [ ] Auto-reconnect works on network interruption
-- [ ] Docker Compose deploys the server on a fresh VPS
-- [ ] All code has tests, structured logging, and structured error handling
-- [ ] End-to-end test: `fonzygrok --port 3000` → public URL → local service responds
+- [x] Server accepts SSH connections from authenticated clients
+- [x] Client connects, registers a tunnel, receives a public subdomain
+- [x] Public HTTP requests to the subdomain are proxied to the client's local port
+- [x] Auto-reconnect works on network interruption
+- [x] Docker Compose deploys the server on a fresh VPS
+- [x] All code has tests, structured logging, and structured error handling
+- [x] End-to-end test: `fonzygrok --port 3000` → public URL → local service responds
 
 **Key deliverables:**
-- `BLU-001` — System Architecture Blueprint
-- `CON-001` — Client-Server Protocol Contract
-- `CON-002` — HTTP Edge & Admin API Contract
-- `SPR-001` through `SPR-007` — Development sprints
+- `BLU-001` — System Architecture Blueprint (APPROVED)
+- `CON-001` — Client-Server Protocol Contract (STABLE)
+- `CON-002` — HTTP Edge & Admin API Contract (STABLE)
+- `SPR-001` through `SPR-005` — Foundation + integration sprints (COMPLETE)
 
 ---
 
-### Phase 2: Polish (v1.1)
+### Phase 2: Polish (v1.1) ✅ COMPLETE — tagged v1.1.0, patched to v1.1.2
 **Goal:** Production-quality UX with custom subdomains, TLS, request inspection, and config files.
 **Exit criteria:**
-- [ ] Custom subdomain reservation (`fonzygrok --subdomain myapp`)
-- [ ] Let's Encrypt auto-TLS on the public edge
-- [ ] Local request inspection UI at `localhost:4040`
-- [ ] YAML config file support for server and client
-- [ ] Connection metrics (bytes, requests, latency)
+- [x] Custom subdomain reservation (`fonzygrok --name myapp`)
+- [x] Let's Encrypt auto-TLS on the public edge
+- [x] Local request inspection UI at `localhost:4040`
+- [x] YAML config file support for server and client
+- [x] Connection metrics (bytes, requests, latency)
+
+**Additional work (post-v1.1.0):**
+- `SPR-014` — Pretty client output (DEF-001 fix)
+- `SPR-015` — Critical proxy EOF + TLS fixes → tagged v1.1.2
+- `SPR-016` — CI/CD auto-deploy + README overhaul
 
 **Key deliverables:**
-- `SPR-008` through `SPR-012` — Polish sprints
+- `SPR-006` through `SPR-009` — v1.1 feature sprints (COMPLETE)
+- `SPR-014` through `SPR-016` — Post-release fixes + infra (COMPLETE)
 
 ---
 
-### Phase 3: Production-Grade (v1.2)
+### Phase 3: Production-Grade (v1.2) 🔄 IN PROGRESS
 **Goal:** Multi-user management, rate limiting, and a web dashboard.
 **Exit criteria:**
-- [ ] Web dashboard for managing tokens, viewing active tunnels
+- [x] Web dashboard for managing tokens, viewing active tunnels
+- [x] User authentication (invite codes, bcrypt, JWT sessions)
+- [x] Self-service registration and token management
 - [ ] Per-tunnel and per-user rate limiting
-- [ ] Wildcard subdomain DNS routing
 - [ ] TCP tunneling support (port-based)
 - [ ] Access control (IP whitelisting)
 
-**Key deliverables:**
-- Sprint plan TBD based on Phase 1 and 2 learnings
+**Completed deliverables:**
+- `SPR-017` — User model + auth backend (COMPLETE)
+- `SPR-018` — API endpoints + auth middleware (COMPLETE)
+- `SPR-019` — Web dashboard (COMPLETE)
+
+**Remaining deliverables:**
+- `SPR-010` — TCP tunneling (READY)
+- `SPR-011` — Rate limiting (READY)
+- `SPR-012` — IP whitelisting / ACL (READY)
+- `SPR-013` — v1.2 integration + release (READY)
 
 ---
 
@@ -127,8 +142,8 @@ Phases are **scope-bounded**, not time-bounded. Each phase is complete when its 
 
 | Contract | Description | Status |
 |:---------|:------------|:-------|
-| `CON-001` | Client-Server Protocol (SSH transport, control messages, tunnel lifecycle) | `DRAFT` |
-| `CON-002` | HTTP Edge & Admin API (routing, subdomain assignment, admin endpoints) | `DRAFT` |
+| `CON-001` | Client-Server Protocol (SSH transport, control messages, tunnel lifecycle) | `STABLE` |
+| `CON-002` | HTTP Edge & Admin API (routing, subdomain assignment, admin endpoints, auth) | `STABLE` |
 
 ---
 
@@ -136,10 +151,10 @@ Phases are **scope-bounded**, not time-bounded. Each phase is complete when its 
 
 This project is complete when:
 - [ ] All phases completed and archived
-- [ ] All contracts at `STABLE` status
+- [x] All contracts at `STABLE` status
 - [ ] All `DEF-` defects resolved or explicitly deferred
 - [ ] Human signs off on final verification report
-- [ ] Docker deployment verified on a fresh VPS
+- [x] Docker deployment verified on a fresh VPS
 
 ---
 
@@ -148,3 +163,4 @@ This project is complete when:
 | Date | Version | Change | Author |
 |:-----|:--------|:-------|:-------|
 | 2026-03-31 | 1.0.0 | Initial roadmap | Human + Architect |
+| 2026-04-02 | 1.1.0 | Reconciliation: Phase 1+2 complete, Phase 3 partially complete, contract statuses updated | Architect |

@@ -2,7 +2,7 @@
 id: BLU-001
 title: "Fonzygrok System Architecture Blueprint"
 type: explanation
-status: DRAFT
+status: APPROVED
 owner: architect
 agents: [all]
 tags: [architecture, design, networking, tunneling, golang]

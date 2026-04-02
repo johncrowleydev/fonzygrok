@@ -2,13 +2,13 @@
 id: SPR-002B
 title: "Client Track — SSH Client & Control Sender"
 type: how-to
-status: PLANNING
+status: COMPLETE
 owner: architect
 agents: [coder]
 tags: [project-management, sprint, workflow, ssh, client]
 related: [BCK-001, BLU-001, CON-001]
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-02
 version: 1.0.0
 ---
 

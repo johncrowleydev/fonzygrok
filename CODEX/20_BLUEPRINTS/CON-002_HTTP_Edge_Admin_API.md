@@ -2,7 +2,7 @@
 id: CON-002
 title: "HTTP Edge & Admin API Contract"
 type: reference
-status: DRAFT
+status: STABLE
 owner: architect
 agents: [all]
 tags: [standards, specification, api, http, routing]

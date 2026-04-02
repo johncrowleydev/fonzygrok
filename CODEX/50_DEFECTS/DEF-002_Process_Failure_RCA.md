@@ -2,14 +2,14 @@
 id: DEF-002
 title: "Root Cause Analysis: v1.1 Released with Multiple Critical Defects"
 type: defect
-status: OPEN
+status: RESOLVED
 severity: CRITICAL
 owner: architect
 agents: [all]
 tags: [defect, process-failure, rca, governance, v1.1]
 related: [DEF-001, GOV-002, GOV-005, GOV-007]
 created: 2026-04-01
-updated: 2026-04-01
+updated: 2026-04-02
 version: 1.0.0
 ---
 
@@ -161,14 +161,27 @@ it works. Not optional. Not skippable.
 The runbook must include a verification section that is not optional.
 Deployment is not complete until all verification steps pass.
 
----
-
 ## Action Items
 
-1. **Update GOV-002** with Tier 4 smoke tests and production verification protocol
-2. **Update GOV-007** with strengthened acceptance criteria and human signoff rule
-3. **Update GOV-005** with user acceptance gate
-4. **Update RUN-001** with post-deployment verification checklist
-5. **File DEF-003** for tunnel proxy `unexpected EOF` over internet
-6. **File DEF-004** for TLS not enabled in production
-7. **Create SPR-015** for all code fixes (proxy bug, TLS config, smoke tests)
+1. ~~**Update GOV-002** with Tier 4 smoke tests and production verification protocol~~ ✅ Applied (§18 UAT + §18A Smoke Tests)
+2. ~~**Update GOV-007** with strengthened acceptance criteria and human signoff rule~~ ✅ Applied (§4.2 + §4.3)
+3. ~~**Update GOV-005** with user acceptance gate~~ ✅ Applied (§8.1 deployment process, 2026-04-02)
+4. ~~**Update RUN-001** with post-deployment verification checklist~~ ⏳ Deferred — runbooks not yet created (BCK-002 A-025)
+5. ~~**File DEF-003** for tunnel proxy `unexpected EOF` over internet~~ ✅ Filed and RESOLVED (SPR-015A)
+6. ~~**File DEF-004** for TLS not enabled in production~~ ✅ Filed and RESOLVED (SPR-015A T-048)
+7. ~~**Create SPR-015** for all code fixes (proxy bug, TLS config, smoke tests)~~ ✅ Created and COMPLETE (v1.1.2)
+
+---
+
+## Resolution
+
+**Status changed: OPEN → RESOLVED** (2026-04-02)
+
+All governance changes have been applied except the deployment runbook (deferred to
+BCK-002 A-025, which depends on v1.2 completion). The process failures that led to
+v1.1 shipping broken have been addressed through:
+
+- Mandatory Human UAT before tagging (GOV-005 §8.1, GOV-007 §4.3)
+- Mandatory production smoke tests after deployment (GOV-002 §18A)
+- Strengthened sprint acceptance criteria with user-scenario tests (GOV-007 §4.2)
+- All code defects (DEF-001, DEF-003, DEF-004) fixed and tagged v1.1.2

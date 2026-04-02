@@ -2,13 +2,13 @@
 id: SPR-004A
 title: "Server Track — Admin API & Server Orchestrator"
 type: how-to
-status: PLANNING
+status: COMPLETE
 owner: architect
 agents: [coder]
 tags: [project-management, sprint, workflow, api, server, orchestrator]
 related: [BCK-001, BLU-001, CON-002]
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-02
 version: 1.0.0
 ---
 

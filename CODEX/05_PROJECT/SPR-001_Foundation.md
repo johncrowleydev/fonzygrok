@@ -2,13 +2,13 @@
 id: SPR-001
 title: "Foundation — Scaffold, Storage & Auth"
 type: how-to
-status: PLANNING
+status: COMPLETE
 owner: architect
 agents: [coder]
 tags: [project-management, sprint, workflow, scaffolding, storage, auth]
 related: [BCK-001, BLU-001, CON-001, CON-002]
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-02
 version: 2.0.0
 ---
 
