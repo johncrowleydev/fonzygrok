@@ -18,10 +18,10 @@ function Write-Err($msg)  { Write-Host "  ✘ " -ForegroundColor Red -NoNewline;
 
 # --- Detect architecture ---
 function Get-Arch {
-    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    $arch = $env:PROCESSOR_ARCHITECTURE
     switch ($arch) {
-        "X64"   { return "amd64" }
-        "Arm64" { return "arm64" }
+        "AMD64" { return "amd64" }
+        "ARM64" { return "arm64" }
         default { Write-Err "Unsupported architecture: $arch" }
     }
 }
