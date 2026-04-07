@@ -40,8 +40,13 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # Create data and certs directories.
 RUN mkdir -p /data /data/certs && chown -R fonzygrok:fonzygrok /data
 
-# Expose ports: SSH, HTTP edge, HTTPS edge, Admin API.
-EXPOSE 2222 8080 443 9090
+# Expose ports:
+#   2222  - SSH (client connections)
+#   8080  - HTTP edge (tunnel proxy)
+#   443   - HTTPS edge (tunnel proxy + dashboard, when TLS enabled)
+#   9090  - Admin API (internal, bound to 0.0.0.0 in container)
+#   40000-40100 - TCP tunnel port range (each TCP tunnel gets one port)
+EXPOSE 2222 8080 443 9090 40000-40100
 
 # Volumes for persistent data (database, host key, TLS certs).
 VOLUME /data

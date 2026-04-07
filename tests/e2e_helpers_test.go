@@ -75,6 +75,8 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 		Domain:     opts.Domain,
 		TCPPortMin: 40000,
 		TCPPortMax: 41000,
+		RateLimit:  100,
+		RateBurst:  200,
 		SSH: server.SSHConfig{
 			Addr:        sshAddr,
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),

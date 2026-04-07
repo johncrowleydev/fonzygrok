@@ -11,6 +11,8 @@ services:
       - "${SSH_PORT:-2222}:2222"
       - "${HTTP_PORT:-8080}:8080"
       - "${HTTPS_PORT:-443}:443"
+      # TCP tunnel port range — keep narrow to limit attack surface.
+      - "${TCP_PORT_RANGE:-40000-40100}:40000-40100"
       # Port 9090 is optional for external access — dashboard is served on :443
       # when TLS is enabled. Uncomment for direct admin API access.
       # - "${ADMIN_PORT:-9090}:9090"
@@ -21,6 +23,9 @@ services:
       - DOMAIN=${DOMAIN:-tunnel.localhost}
       - APEX_DOMAIN=${APEX_DOMAIN:-}
       - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TCP_PORT_RANGE=${TCP_PORT_RANGE:-40000-40100}
+      - RATE_LIMIT=${RATE_LIMIT:-100}
+      - RATE_BURST=${RATE_BURST:-200}
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: []
     healthcheck:

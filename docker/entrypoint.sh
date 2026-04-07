@@ -1,6 +1,7 @@
 #!/bin/sh
-# Entrypoint script that conditionally enables TLS based on TLS_ENABLED env var.
-# Used by docker-compose.yml to support both local dev (no TLS) and production (TLS).
+# Entrypoint script for fonzygrok-server Docker container.
+# Translates environment variables to CLI flags, with sensible defaults.
+# Supports: domain, apex domain, TLS, TCP port range, rate limiting.
 
 set -e
 
@@ -16,6 +17,19 @@ fi
 if [ "${TLS_ENABLED}" = "true" ]; then
     CMD="${CMD} --tls --tls-cert-dir=/data/certs"
     echo "TLS enabled: cert-dir=/data/certs domain=${DOMAIN:-tunnel.localhost} apex-domain=${APEX_DOMAIN:-derived}"
+fi
+
+# Add TCP port range if set.
+if [ -n "${TCP_PORT_RANGE}" ]; then
+    CMD="${CMD} --tcp-port-range=${TCP_PORT_RANGE}"
+fi
+
+# Add rate limiting flags if set.
+if [ -n "${RATE_LIMIT}" ]; then
+    CMD="${CMD} --rate-limit=${RATE_LIMIT}"
+fi
+if [ -n "${RATE_BURST}" ]; then
+    CMD="${CMD} --rate-burst=${RATE_BURST}"
 fi
 
 exec ${CMD}
