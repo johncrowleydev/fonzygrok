@@ -9,11 +9,17 @@ import (
 )
 
 func TestServerStartStop(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping (requires PostgreSQL)")
+	}
+
 	tmpDir := t.TempDir()
 
 	config := ServerConfig{
-		DataDir: tmpDir,
-		Domain:  "tunnel.test.com",
+		DataDir:     tmpDir,
+		DatabaseURL: dsn,
+		Domain:      "test.com",
 		SSH: SSHConfig{
 			Addr:        "127.0.0.1:0",
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -55,12 +61,18 @@ func TestServerStartStop(t *testing.T) {
 	}
 }
 
-func TestServerCreatesDatabase(t *testing.T) {
+func TestServerCreatesHostKey(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping (requires PostgreSQL)")
+	}
+
 	tmpDir := t.TempDir()
 
 	config := ServerConfig{
-		DataDir: tmpDir,
-		Domain:  "tunnel.test.com",
+		DataDir:     tmpDir,
+		DatabaseURL: dsn,
+		Domain:      "test.com",
 		SSH: SSHConfig{
 			Addr:        "127.0.0.1:0",
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -78,12 +90,6 @@ func TestServerCreatesDatabase(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	// Database file should exist.
-	dbPath := filepath.Join(tmpDir, "fonzygrok.db")
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Errorf("database file not created: %v", err)
-	}
-
 	// Host key should exist.
 	if _, err := os.Stat(filepath.Join(tmpDir, "host_key")); err != nil {
 		t.Errorf("host key not created: %v", err)
@@ -99,11 +105,17 @@ func TestServerCreatesDatabase(t *testing.T) {
 }
 
 func TestServerStoreAccess(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping (requires PostgreSQL)")
+	}
+
 	tmpDir := t.TempDir()
 
 	config := ServerConfig{
-		DataDir: tmpDir,
-		Domain:  "tunnel.test.com",
+		DataDir:     tmpDir,
+		DatabaseURL: dsn,
+		Domain:      "test.com",
 		SSH: SSHConfig{
 			Addr:        "127.0.0.1:0",
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
