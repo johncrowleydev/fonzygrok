@@ -19,17 +19,20 @@ const (
 )
 
 // RequestEntry captures a single proxied request/response.
+// For HTTP entries, Method/Path/StatusCode/Headers are populated.
+// For TCP entries (Protocol="tcp"), only Protocol/DurationMs/RequestSize/ResponseSize are populated.
 type RequestEntry struct {
 	ID              string            `json:"id"`
+	Protocol        string            `json:"protocol"`
 	Timestamp       time.Time         `json:"timestamp"`
-	Method          string            `json:"method"`
-	Path            string            `json:"path"`
-	StatusCode      int               `json:"status_code"`
+	Method          string            `json:"method,omitempty"`
+	Path            string            `json:"path,omitempty"`
+	StatusCode      int               `json:"status_code,omitempty"`
 	DurationMs      float64           `json:"duration_ms"`
 	RequestSize     int64             `json:"request_size"`
 	ResponseSize    int64             `json:"response_size"`
-	RequestHeaders  map[string]string `json:"request_headers"`
-	ResponseHeaders map[string]string `json:"response_headers"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 	BodyPreview     string            `json:"body_preview,omitempty"`
 }
 

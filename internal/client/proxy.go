@@ -59,6 +59,7 @@ func NewLocalProxy(localPort int, logger *slog.Logger) *LocalProxy {
 
 // HandleChannels processes incoming SSH channel requests until ctx is cancelled
 // or channelChan is closed. Each accepted channel is handled in its own goroutine.
+// Supports both HTTP proxy ("proxy") and TCP proxy ("tcp-proxy") channel types.
 func (lp *LocalProxy) HandleChannels(ctx context.Context, channelChan <-chan ssh.NewChannel) {
 	for {
 		select {
@@ -70,14 +71,17 @@ func (lp *LocalProxy) HandleChannels(ctx context.Context, channelChan <-chan ssh
 				lp.logger.Info("proxy: channel source closed")
 				return
 			}
-			if newCh.ChannelType() != ChannelTypeProxy {
+			switch newCh.ChannelType() {
+			case ChannelTypeProxy:
+				go lp.handleSingleChannel(newCh)
+			case ChannelTypeTCPProxy:
+				go lp.handleTCPChannel(newCh)
+			default:
 				lp.logger.Warn("proxy: rejecting unknown channel type",
 					slog.String("type", newCh.ChannelType()),
 				)
 				newCh.Reject(ssh.UnknownChannelType, "unsupported channel type")
-				continue
 			}
-			go lp.handleSingleChannel(newCh)
 		}
 	}
 }
@@ -155,6 +159,76 @@ func (lp *LocalProxy) handleSingleChannel(newCh ssh.NewChannel) {
 	}
 }
 
+// handleTCPChannel accepts a tcp-proxy channel and bridges it to localhost.
+// Unlike handleSingleChannel, this does NOT write an HTTP 502 on dial failure —
+// TCP has no HTTP semantics. The SSH channel is simply closed.
+func (lp *LocalProxy) handleTCPChannel(newCh ssh.NewChannel) {
+	ch, reqs, err := newCh.Accept()
+	if err != nil {
+		lp.logger.Error("proxy: accept tcp channel failed",
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	defer ch.Close()
+
+	start := time.Now()
+
+	localAddr := fmt.Sprintf("127.0.0.1:%d", lp.localPort)
+	localConn, err := net.Dial("tcp", localAddr)
+	if err != nil {
+		lp.logger.Warn("proxy: local TCP service unreachable, closing channel",
+			slog.String("addr", localAddr),
+			slog.String("error", err.Error()),
+		)
+		// No HTTP 502 — just close the channel. TCP has no error page.
+		return
+	}
+	defer localConn.Close()
+
+	lp.logger.Debug("proxy: TCP connected to local service",
+		slog.String("addr", localAddr),
+	)
+
+	// Bidirectional copy using pooled buffers.
+	var wg sync.WaitGroup
+	var bytesIn, bytesOut int64
+	wg.Add(2)
+
+	// SSH channel → local service
+	go func() {
+		defer wg.Done()
+		n, _ := lp.copyWithPoolCounted(localConn, ch)
+		bytesIn = n
+		if tc, ok := localConn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+	}()
+
+	// Local service → SSH channel
+	go func() {
+		defer wg.Done()
+		n, _ := lp.copyWithPoolCounted(ch, localConn)
+		bytesOut = n
+		ch.CloseWrite()
+	}()
+
+	wg.Wait()
+
+	// Record to inspector if enabled.
+	if lp.Inspector != nil {
+		entry := RequestEntry{
+			Protocol:    "tcp",
+			Timestamp:   start,
+			DurationMs:  float64(time.Since(start).Milliseconds()),
+			RequestSize: bytesIn,
+			ResponseSize: bytesOut,
+		}
+		lp.Inspector.Record(entry)
+	}
+}
+
 // copyWithPool copies from src to dst using a pooled buffer.
 func (lp *LocalProxy) copyWithPool(dst io.Writer, src io.Reader) {
 	bufp := bufPool.Get().(*[]byte)
@@ -166,6 +240,21 @@ func (lp *LocalProxy) copyWithPool(dst io.Writer, src io.Reader) {
 			slog.String("error", err.Error()),
 		)
 	}
+}
+
+// copyWithPoolCounted copies from src to dst using a pooled buffer and returns
+// the number of bytes copied. Used by TCP proxy to track bytes for inspector.
+func (lp *LocalProxy) copyWithPoolCounted(dst io.Writer, src io.Reader) (int64, error) {
+	bufp := bufPool.Get().(*[]byte)
+	defer bufPool.Put(bufp)
+
+	n, err := io.CopyBuffer(dst, src, *bufp)
+	if err != nil && !isClosedError(err) {
+		lp.logger.Debug("proxy: copy finished",
+			slog.String("error", err.Error()),
+		)
+	}
+	return n, err
 }
 
 // isClosedError reports whether err is a benign "use of closed" error.
@@ -228,6 +317,7 @@ func (rc *responseCapture) Write(p []byte) (int, error) {
 // buildRequestEntry parses captured request/response data into a RequestEntry.
 func buildRequestEntry(req *requestCapture, resp *responseCapture, start time.Time) RequestEntry {
 	entry := RequestEntry{
+		Protocol:        "http",
 		Timestamp:       start,
 		DurationMs:      float64(time.Since(start).Milliseconds()),
 		RequestSize:     int64(req.buf.Len()),

@@ -164,3 +164,28 @@ func TestOpenControlNotConnected(t *testing.T) {
 		t.Fatal("OpenControl() should fail when not connected")
 	}
 }
+
+// TestHostExtractsHostname verifies Host() strips the port from ServerAddr.
+func TestHostExtractsHostname(t *testing.T) {
+	tests := []struct {
+		addr string
+		want string
+	}{
+		{"fonzygrok.com:2222", "fonzygrok.com"},
+		{"localhost:2222", "localhost"},
+		{"192.168.1.1:2222", "192.168.1.1"},
+		{"example.com", "example.com"}, // no port — returns as-is
+	}
+
+	for _, tt := range tests {
+		c := NewConnector(ClientConfig{
+			ServerAddr: tt.addr,
+			Token:      testToken,
+		}, slog.Default())
+
+		got := c.Host()
+		if got != tt.want {
+			t.Errorf("Host() for %q = %q, want %q", tt.addr, got, tt.want)
+		}
+	}
+}

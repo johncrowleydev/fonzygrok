@@ -123,6 +123,8 @@ func (s *testSSHServer) handleConn(tcpConn net.Conn) {
 			go s.handleControlChannel(newCh)
 		case ChannelTypeProxy:
 			go s.handleProxyChannel(newCh)
+		case ChannelTypeTCPProxy:
+			go s.handleProxyChannel(newCh) // TCP proxy: same echo behavior for testing
 		default:
 			newCh.Reject(ssh.UnknownChannelType, "unsupported channel type")
 		}
