@@ -8,9 +8,9 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'user',
-    created_at    TEXT NOT NULL,
-    last_login_at TEXT,
-    is_active     INTEGER NOT NULL DEFAULT 1
+    created_at    TIMESTAMPTZ NOT NULL,
+    last_login_at TIMESTAMPTZ,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 -- Invite codes for controlled registration.
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS invite_codes (
     code        TEXT UNIQUE NOT NULL,
     created_by  TEXT NOT NULL REFERENCES users(id),
     used_by     TEXT REFERENCES users(id),
-    used_at     TEXT,
-    created_at  TEXT NOT NULL,
-    is_active   INTEGER NOT NULL DEFAULT 1
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE
 );

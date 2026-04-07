@@ -53,8 +53,8 @@ func (s *Store) CreateInviteCode(createdBy string) (*InviteCode, string, error) 
 
 	_, err := s.db.Exec(
 		`INSERT INTO invite_codes (id, code, created_by, created_at, is_active)
-		 VALUES (?, ?, ?, ?, 1)`,
-		id, code, createdBy, now.Format(time.RFC3339),
+		 VALUES ($1, $2, $3, $4, TRUE)`,
+		id, code, createdBy, now,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("store: create invite code: %w", err)
@@ -78,16 +78,13 @@ func (s *Store) ValidateInviteCode(code string) (*InviteCode, error) {
 	}
 
 	var ic InviteCode
-	var createdAt string
 	var usedBy sql.NullString
-	var usedAt sql.NullString
-	var isActive int
 
 	err := s.db.QueryRow(
 		`SELECT id, code, created_by, used_by, used_at, created_at, is_active
-		 FROM invite_codes WHERE code = ?`,
+		 FROM invite_codes WHERE code = $1`,
 		code,
-	).Scan(&ic.ID, &ic.Code, &ic.CreatedBy, &usedBy, &usedAt, &createdAt, &isActive)
+	).Scan(&ic.ID, &ic.Code, &ic.CreatedBy, &usedBy, &ic.UsedAt, &ic.CreatedAt, &ic.IsActive)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("store: invalid invite code")
@@ -96,16 +93,12 @@ func (s *Store) ValidateInviteCode(code string) (*InviteCode, error) {
 		return nil, fmt.Errorf("store: validate invite code: %w", err)
 	}
 
-	ic.IsActive = isActive == 1
 	if !ic.IsActive {
 		return nil, fmt.Errorf("store: invite code is deactivated")
 	}
 	if usedBy.Valid {
 		return nil, fmt.Errorf("store: invite code already used")
 	}
-
-	t, _ := time.Parse(time.RFC3339, createdAt)
-	ic.CreatedAt = t
 
 	return &ic, nil
 }
@@ -118,9 +111,9 @@ func (s *Store) RedeemInviteCode(codeID, usedBy string) error {
 		return fmt.Errorf("store: codeID and usedBy are required")
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
 	result, err := s.db.Exec(
-		`UPDATE invite_codes SET used_by = ?, used_at = ? WHERE id = ? AND used_by IS NULL`,
+		`UPDATE invite_codes SET used_by = $1, used_at = $2 WHERE id = $3 AND used_by IS NULL`,
 		usedBy, now, codeID,
 	)
 	if err != nil {
@@ -149,25 +142,14 @@ func (s *Store) ListInviteCodes() ([]InviteCode, error) {
 	var codes []InviteCode
 	for rows.Next() {
 		var ic InviteCode
-		var createdAt string
 		var usedBy sql.NullString
-		var usedAt sql.NullString
-		var isActive int
 
-		if err := rows.Scan(&ic.ID, &ic.Code, &ic.CreatedBy, &usedBy, &usedAt, &createdAt, &isActive); err != nil {
+		if err := rows.Scan(&ic.ID, &ic.Code, &ic.CreatedBy, &usedBy, &ic.UsedAt, &ic.CreatedAt, &ic.IsActive); err != nil {
 			return nil, fmt.Errorf("store: scan invite code row: %w", err)
 		}
 
-		ic.IsActive = isActive == 1
-		t, _ := time.Parse(time.RFC3339, createdAt)
-		ic.CreatedAt = t
-
 		if usedBy.Valid {
 			ic.UsedBy = &usedBy.String
-		}
-		if usedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, usedAt.String)
-			ic.UsedAt = &t
 		}
 
 		codes = append(codes, ic)

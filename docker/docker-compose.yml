@@ -1,10 +1,30 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fonzygrok-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-fonzygrok}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fonzygrok}
+      - POSTGRES_DB=${POSTGRES_DB:-fonzygrok}
+    volumes:
+      - fonzygrok-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fonzygrok"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   fonzygrok-server:
     build:
       context: ..
       dockerfile: docker/Dockerfile.prod
     container_name: fonzygrok-server
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${SSH_PORT:-2222}:2222"
       - "80:80"              # HTTP→HTTPS redirect server
@@ -25,6 +45,7 @@ services:
       - TCP_PORT_RANGE=${TCP_PORT_RANGE:-40000-40100}
       - RATE_LIMIT=${RATE_LIMIT:-100}
       - RATE_BURST=${RATE_BURST:-200}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-fonzygrok}:${POSTGRES_PASSWORD:-fonzygrok}@postgres:5432/${POSTGRES_DB:-fonzygrok}?sslmode=disable
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: []
     healthcheck:
@@ -32,9 +53,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 10s
 
 volumes:
+  fonzygrok-pgdata:
+    driver: local
   fonzygrok-data:
     driver: local
   fonzygrok-certs:

@@ -1,13 +1,26 @@
 package store
 
 import (
+	"fmt"
+	"os"
 	"testing"
 )
 
+// testDatabaseURL returns the database URL for tests.
+// Set TEST_DATABASE_URL env var, or defaults to local fonzygrok_test DB.
+func testDatabaseURL(t *testing.T) string {
+	t.Helper()
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		url = "postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable"
+	}
+	return url
+}
+
 func TestNew(t *testing.T) {
-	s, err := New(":memory:")
+	s, err := New(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
 
@@ -17,9 +30,9 @@ func TestNew(t *testing.T) {
 }
 
 func TestMigrate(t *testing.T) {
-	s, err := New(":memory:")
+	s, err := New(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
 
@@ -28,22 +41,28 @@ func TestMigrate(t *testing.T) {
 	}
 
 	// Verify all tables exist.
-	tables := []string{"tokens", "tunnels", "connection_log"}
+	tables := []string{"tokens", "tunnels", "connection_log", "users", "invite_codes"}
 	for _, table := range tables {
-		var name string
+		var exists bool
 		err := s.db.QueryRow(
-			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", table,
-		).Scan(&name)
+			`SELECT EXISTS (
+				SELECT 1 FROM information_schema.tables
+				WHERE table_name = $1
+			)`, table,
+		).Scan(&exists)
 		if err != nil {
-			t.Errorf("table %q not found after migration: %v", table, err)
+			t.Errorf("check table %q: %v", table, err)
+		}
+		if !exists {
+			t.Errorf("table %q not found after migration", table)
 		}
 	}
 }
 
 func TestMigrateIdempotent(t *testing.T) {
-	s, err := New(":memory:")
+	s, err := New(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
 
@@ -56,47 +75,34 @@ func TestMigrateIdempotent(t *testing.T) {
 	}
 }
 
-func TestWALMode(t *testing.T) {
-	s, err := New(":memory:")
-	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
-	}
-	defer s.Close()
-
-	var mode string
-	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
-		t.Fatalf("query journal_mode: %v", err)
-	}
-	// :memory: databases use "memory" journal mode, which is expected.
-	// WAL mode is set but SQLite falls back to "memory" for in-memory DBs.
-	if mode != "wal" && mode != "memory" {
-		t.Errorf("journal_mode: got %q, want wal or memory", mode)
-	}
-}
-
 func TestClose(t *testing.T) {
-	s, err := New(":memory:")
+	s, err := New(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// Double close should not panic.
-	if err := s.Close(); err != nil {
-		// Some drivers return an error on double close, that's acceptable.
-		t.Logf("double Close returned: %v (acceptable)", err)
-	}
 }
 
-// newTestStore creates an in-memory store with migrations applied.
-// It fails the test if setup fails.
+// newTestStore creates a test store with a clean database.
+// It drops all tables before migrating to ensure test isolation.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := New(":memory:")
+	s, err := New(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("New(:memory:): %v", err)
+		t.Fatalf("New: %v", err)
 	}
+
+	// Clean slate: drop all tables for test isolation.
+	tables := []string{"invite_codes", "connection_log", "tunnels", "tokens", "users"}
+	for _, table := range tables {
+		_, err := s.db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table))
+		if err != nil {
+			t.Fatalf("drop table %s: %v", table, err)
+		}
+	}
+
 	if err := s.Migrate(); err != nil {
 		s.Close()
 		t.Fatalf("Migrate: %v", err)

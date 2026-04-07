@@ -49,6 +49,7 @@ func serveCmd() *cobra.Command {
 		httpAddr     string
 		adminAddr    string
 		dataDir      string
+		databaseURL  string
 		domain       string
 		apexDomain   string
 		tlsEnabled   bool
@@ -117,10 +118,19 @@ func serveCmd() *cobra.Command {
 				merged.HTTP.TLSCertDir = merged.DataDir + "/certs"
 			}
 
+			// Resolve database URL: flag > env var > default.
+			if databaseURL == "" {
+				databaseURL = os.Getenv("DATABASE_URL")
+			}
+			if databaseURL == "" {
+				databaseURL = "postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok?sslmode=disable"
+			}
+
 			// Translate config.ServerConfig → server.ServerConfig.
 			srvConfig := server.ServerConfig{
-				DataDir:    merged.DataDir,
-				Domain:     merged.Domain,
+				DataDir:     merged.DataDir,
+				DatabaseURL: databaseURL,
+				Domain:      merged.Domain,
 				ApexDomain: merged.HTTP.ApexDomain,
 				TCPPortMin: merged.HTTP.TCPPortMin,
 				TCPPortMax: merged.HTTP.TCPPortMax,
@@ -168,7 +178,8 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sshAddr, "ssh-addr", ":2222", "SSH listen address")
 	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "HTTP edge listen address")
 	cmd.Flags().StringVar(&adminAddr, "admin-addr", "127.0.0.1:9090", "Admin API listen address")
-	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory for database and host key")
+	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory for host key and certs")
+	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL connection string (default: $DATABASE_URL)")
 	cmd.Flags().StringVar(&domain, "domain", "tunnel.localhost", "Base domain for tunnel routing")
 	cmd.Flags().StringVar(&apexDomain, "apex-domain", "", "Apex domain for dashboard (default: derived from --domain)")
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
@@ -203,7 +214,7 @@ func tokenCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a new authentication token",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore(dataDir)
+			st, err := openStore()
 			if err != nil {
 				return err
 			}
@@ -237,7 +248,7 @@ func tokenListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all tokens",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore(dataDir)
+			st, err := openStore()
 			if err != nil {
 				return err
 			}
@@ -288,7 +299,7 @@ func tokenRevokeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tokenID := args[0]
 
-			st, err := openStore(dataDir)
+			st, err := openStore()
 			if err != nil {
 				return err
 			}
@@ -307,16 +318,14 @@ func tokenRevokeCmd() *cobra.Command {
 	return cmd
 }
 
-// openStore opens the database for CLI token commands.
-func openStore(dataDir string) (*store.Store, error) {
-	dbPath := dataDir + "/fonzygrok.db"
-
-	// Ensure data dir exists.
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create data dir: %w", err)
+// openStore opens the database for CLI subcommands.
+func openStore() (*store.Store, error) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok?sslmode=disable"
 	}
 
-	st, err := store.New(dbPath)
+	st, err := store.New(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -351,7 +360,7 @@ func adminCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create an admin user",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore(dataDir)
+			st, err := openStore()
 			if err != nil {
 				return err
 			}

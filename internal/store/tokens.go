@@ -35,8 +35,8 @@ func (s *Store) CreateToken(name string, userID ...string) (*Token, string, erro
 	}
 
 	_, err := s.db.Exec(
-		`INSERT INTO tokens (id, name, token_hash, user_id, created_at, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
-		id, name, hash, uid, now.Format(time.RFC3339),
+		`INSERT INTO tokens (id, name, token_hash, user_id, created_at, is_active) VALUES ($1, $2, $3, $4, $5, TRUE)`,
+		id, name, hash, uid, now,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("store: create token: %w", err)
@@ -59,15 +59,12 @@ func (s *Store) ValidateToken(rawToken string) (*Token, error) {
 	hash := auth.HashToken(rawToken)
 
 	var tok Token
-	var createdAt string
-	var lastUsedAt sql.NullString
 	var userID sql.NullString
-	var isActive int
 
 	err := s.db.QueryRow(
-		`SELECT id, name, token_hash, user_id, created_at, last_used_at, is_active FROM tokens WHERE token_hash = ?`,
+		`SELECT id, name, token_hash, user_id, created_at, last_used_at, is_active FROM tokens WHERE token_hash = $1`,
 		hash,
-	).Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &createdAt, &lastUsedAt, &isActive)
+	).Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &tok.CreatedAt, &tok.LastUsedAt, &tok.IsActive)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("store: invalid token")
 	}
@@ -75,27 +72,12 @@ func (s *Store) ValidateToken(rawToken string) (*Token, error) {
 		return nil, fmt.Errorf("store: validate token: %w", err)
 	}
 
-	tok.IsActive = isActive == 1
 	if !tok.IsActive {
 		return nil, fmt.Errorf("store: token is revoked")
 	}
 
 	if userID.Valid {
 		tok.UserID = &userID.String
-	}
-
-	t, err := time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("store: parse created_at: %w", err)
-	}
-	tok.CreatedAt = t
-
-	if lastUsedAt.Valid {
-		t, err := time.Parse(time.RFC3339, lastUsedAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("store: parse last_used_at: %w", err)
-		}
-		tok.LastUsedAt = &t
 	}
 
 	return &tok, nil
@@ -114,32 +96,14 @@ func (s *Store) ListTokens() ([]Token, error) {
 	var tokens []Token
 	for rows.Next() {
 		var tok Token
-		var createdAt string
-		var lastUsedAt sql.NullString
 		var userID sql.NullString
-		var isActive int
 
-		if err := rows.Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &createdAt, &lastUsedAt, &isActive); err != nil {
+		if err := rows.Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &tok.CreatedAt, &tok.LastUsedAt, &tok.IsActive); err != nil {
 			return nil, fmt.Errorf("store: scan token row: %w", err)
 		}
 
-		tok.IsActive = isActive == 1
 		if userID.Valid {
 			tok.UserID = &userID.String
-		}
-
-		t, err := time.Parse(time.RFC3339, createdAt)
-		if err != nil {
-			return nil, fmt.Errorf("store: parse created_at: %w", err)
-		}
-		tok.CreatedAt = t
-
-		if lastUsedAt.Valid {
-			t, err := time.Parse(time.RFC3339, lastUsedAt.String)
-			if err != nil {
-				return nil, fmt.Errorf("store: parse last_used_at: %w", err)
-			}
-			tok.LastUsedAt = &t
 		}
 
 		tokens = append(tokens, tok)
@@ -154,7 +118,7 @@ func (s *Store) ListTokens() ([]Token, error) {
 // DeleteToken marks a token as inactive (soft delete) by ID.
 // Returns an error if the token does not exist.
 func (s *Store) DeleteToken(id string) error {
-	result, err := s.db.Exec(`UPDATE tokens SET is_active = 0 WHERE id = ?`, id)
+	result, err := s.db.Exec(`UPDATE tokens SET is_active = FALSE WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete token: %w", err)
 	}
@@ -170,8 +134,8 @@ func (s *Store) DeleteToken(id string) error {
 
 // UpdateLastUsed sets the last_used_at timestamp to now for the given token ID.
 func (s *Store) UpdateLastUsed(id string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.Exec(`UPDATE tokens SET last_used_at = ? WHERE id = ?`, now, id)
+	now := time.Now().UTC()
+	_, err := s.db.Exec(`UPDATE tokens SET last_used_at = $1 WHERE id = $2`, now, id)
 	if err != nil {
 		return fmt.Errorf("store: update last used: %w", err)
 	}

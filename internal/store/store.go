@@ -1,6 +1,6 @@
-// Package store provides persistent storage for fonzygrok using SQLite.
+// Package store provides persistent storage for fonzygrok using PostgreSQL.
 // It manages database initialization, migrations, and provides CRUD
-// operations for tokens, tunnels, and connection logs.
+// operations for tokens, tunnels, users, and invite codes.
 package store
 
 import (
@@ -11,41 +11,32 @@ import (
 
 	"github.com/fonzygrok/fonzygrok/migrations"
 
-	// Pure-Go SQLite driver — no CGo required.
-	_ "modernc.org/sqlite"
+	// Pure-Go PostgreSQL driver.
+	_ "github.com/lib/pq"
 )
 
-// Store wraps a SQLite database connection and provides methods for
+// Store wraps a PostgreSQL database connection and provides methods for
 // persisting fonzygrok state.
 type Store struct {
 	db *sql.DB
 }
 
-// New opens a SQLite database at the given path and configures WAL mode.
-// Use ":memory:" for in-memory testing databases.
-func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite", dbPath)
+// New opens a PostgreSQL database using the given connection string.
+// Example: "postgres://user:pass@host:5432/dbname?sslmode=disable"
+func New(connStr string) (*Store, error) {
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return nil, fmt.Errorf("store: open database %q: %w", dbPath, err)
+		return nil, fmt.Errorf("store: open database: %w", err)
 	}
 
-	// For in-memory databases, limit to a single connection so all
-	// queries share the same database instance.
-	if dbPath == ":memory:" {
-		db.SetMaxOpenConns(1)
-	}
-
-	// Enable WAL mode for concurrent reads per GOV-008.
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if err := db.Ping(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("store: enable WAL mode: %w", err)
+		return nil, fmt.Errorf("store: ping database: %w", err)
 	}
 
-	// Enable foreign keys.
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("store: enable foreign keys: %w", err)
-	}
+	// Sensible connection pool defaults for a small app.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 
 	return &Store{db: db}, nil
 }
@@ -64,7 +55,7 @@ func (s *Store) DB() *sql.DB {
 }
 
 // Migrate runs all embedded SQL migration files in order.
-// Migrations are idempotent (use IF NOT EXISTS).
+// Migrations are idempotent (use IF NOT EXISTS / CREATE OR REPLACE).
 func (s *Store) Migrate() error {
 	entries, err := migrations.FS.ReadDir(".")
 	if err != nil {
@@ -90,8 +81,6 @@ func (s *Store) Migrate() error {
 	}
 
 	// Post-migration: add user_id column to tokens if missing.
-	// SQLite lacks ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we
-	// check PRAGMA table_info first. This handles existing v1.1 DBs.
 	if err := s.addColumnIfMissing("tokens", "user_id", "TEXT REFERENCES users(id)"); err != nil {
 		return fmt.Errorf("store: add user_id to tokens: %w", err)
 	}
@@ -100,29 +89,23 @@ func (s *Store) Migrate() error {
 }
 
 // addColumnIfMissing adds a column to a table only if it doesn't already exist.
-// DECISION: Use PRAGMA table_info instead of catching ALTER TABLE errors,
-// because SQLite error messages for duplicate columns are not standardized.
+// Uses information_schema instead of SQLite's PRAGMA table_info.
 func (s *Store) addColumnIfMissing(table, column, columnDef string) error {
-	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	var exists bool
+	err := s.db.QueryRow(
+		`SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = $1 AND column_name = $2
+		)`, table, column,
+	).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("pragma table_info(%s): %w", table, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name, colType string
-		var notNull, pk int
-		var dfltValue interface{}
-		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
-			return fmt.Errorf("scan table_info: %w", err)
-		}
-		if name == column {
-			return nil // Column already exists.
-		}
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
 	}
 
-	// Column doesn't exist — add it.
+	if exists {
+		return nil
+	}
+
 	_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnDef))
 	return err
 }

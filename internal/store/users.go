@@ -1,5 +1,5 @@
 // Package store — users.go provides CRUD operations for fonzygrok
-// user accounts. Users are persisted in SQLite with bcrypt password
+// user accounts. Users are persisted in PostgreSQL with bcrypt password
 // hashes. Passwords are NEVER stored or logged in plaintext.
 //
 // REF: SPR-017 T-056
@@ -52,8 +52,8 @@ func (s *Store) CreateUser(username, email, passwordHash, role string) (*User, e
 
 	_, err := s.db.Exec(
 		`INSERT INTO users (id, username, email, password_hash, role, created_at, is_active)
-		 VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		id, username, email, passwordHash, role, now.Format(time.RFC3339),
+		 VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
+		id, username, email, passwordHash, role, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: create user: %w", err)
@@ -92,17 +92,14 @@ func (s *Store) GetUserByID(id string) (*User, error) {
 func (s *Store) getUserByField(field, value string) (*User, error) {
 	query := fmt.Sprintf(
 		`SELECT id, username, email, password_hash, role, created_at, last_login_at, is_active
-		 FROM users WHERE %s = ?`, field,
+		 FROM users WHERE %s = $1`, field,
 	)
 
 	var user User
-	var createdAt string
-	var lastLoginAt sql.NullString
-	var isActive int
 
 	err := s.db.QueryRow(query, value).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.Role, &createdAt, &lastLoginAt, &isActive,
+		&user.Role, &user.CreatedAt, &user.LastLoginAt, &user.IsActive,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("store: user not found")
@@ -111,29 +108,13 @@ func (s *Store) getUserByField(field, value string) (*User, error) {
 		return nil, fmt.Errorf("store: get user by %s: %w", field, err)
 	}
 
-	user.IsActive = isActive == 1
-
-	t, err := time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return nil, fmt.Errorf("store: parse created_at: %w", err)
-	}
-	user.CreatedAt = t
-
-	if lastLoginAt.Valid {
-		t, err := time.Parse(time.RFC3339, lastLoginAt.String)
-		if err != nil {
-			return nil, fmt.Errorf("store: parse last_login_at: %w", err)
-		}
-		user.LastLoginAt = &t
-	}
-
 	return &user, nil
 }
 
 // UpdateLastLogin sets last_login_at to now for the given user ID.
 func (s *Store) UpdateLastLogin(id string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(`UPDATE users SET last_login_at = ? WHERE id = ?`, now, id)
+	now := time.Now().UTC()
+	result, err := s.db.Exec(`UPDATE users SET last_login_at = $1 WHERE id = $2`, now, id)
 	if err != nil {
 		return fmt.Errorf("store: update last login: %w", err)
 	}
@@ -158,24 +139,12 @@ func (s *Store) ListUsers() ([]User, error) {
 	var users []User
 	for rows.Next() {
 		var user User
-		var createdAt string
-		var lastLoginAt sql.NullString
-		var isActive int
 
 		if err := rows.Scan(
 			&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-			&user.Role, &createdAt, &lastLoginAt, &isActive,
+			&user.Role, &user.CreatedAt, &user.LastLoginAt, &user.IsActive,
 		); err != nil {
 			return nil, fmt.Errorf("store: scan user row: %w", err)
-		}
-
-		user.IsActive = isActive == 1
-		t, _ := time.Parse(time.RFC3339, createdAt)
-		user.CreatedAt = t
-
-		if lastLoginAt.Valid {
-			t, _ := time.Parse(time.RFC3339, lastLoginAt.String)
-			user.LastLoginAt = &t
 		}
 
 		users = append(users, user)

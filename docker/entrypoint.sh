@@ -1,12 +1,17 @@
 #!/bin/sh
 # Entrypoint script for fonzygrok-server Docker container.
 # Translates environment variables to CLI flags, with sensible defaults.
-# Supports: domain, apex domain, TLS, TCP port range, rate limiting.
+# Supports: domain, apex domain, TLS, TCP port range, rate limiting, database URL.
 
 set -e
 
 # Base command.
 CMD="fonzygrok-server serve --data-dir=/data --ssh-addr=:2222 --http-addr=:8080 --admin-addr=0.0.0.0:9090 --domain=${DOMAIN:-tunnel.localhost}"
+
+# Add database URL.
+if [ -n "${DATABASE_URL}" ]; then
+    CMD="${CMD} --database-url=${DATABASE_URL}"
+fi
 
 # Add apex domain if set.
 if [ -n "${APEX_DOMAIN}" ]; then

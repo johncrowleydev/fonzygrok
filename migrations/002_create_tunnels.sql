@@ -5,9 +5,9 @@ CREATE TABLE IF NOT EXISTS tunnels (
     token_id        TEXT NOT NULL,
     client_ip       TEXT NOT NULL,
     local_port      INTEGER NOT NULL,
-    connected_at    TEXT NOT NULL,
-    disconnected_at TEXT,
-    bytes_in        INTEGER NOT NULL DEFAULT 0,
-    bytes_out       INTEGER NOT NULL DEFAULT 0,
-    requests_proxied INTEGER NOT NULL DEFAULT 0
+    connected_at    TIMESTAMPTZ NOT NULL,
+    disconnected_at TIMESTAMPTZ,
+    bytes_in        BIGINT NOT NULL DEFAULT 0,
+    bytes_out       BIGINT NOT NULL DEFAULT 0,
+    requests_proxied BIGINT NOT NULL DEFAULT 0
 );

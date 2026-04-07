@@ -16,8 +16,10 @@ import (
 // ServerConfig holds configuration for the complete fonzygrok server.
 // It embeds the configs for each subsystem.
 type ServerConfig struct {
-	// DataDir is the directory for persistent data (database, host key).
+	// DataDir is the directory for persistent data (host key, certs, jwt secret).
 	DataDir string
+	// DatabaseURL is the PostgreSQL connection string.
+	DatabaseURL string
 	// Domain is the base domain for tunnel routing.
 	Domain string
 	// ApexDomain is the apex domain for the dashboard (e.g., "fonzygrok.com").
@@ -74,8 +76,7 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Open the database.
-	dbPath := filepath.Join(config.DataDir, "fonzygrok.db")
-	st, err := store.New(dbPath)
+	st, err := store.New(config.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("server: open store: %w", err)
 	}
