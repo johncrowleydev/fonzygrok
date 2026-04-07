@@ -82,14 +82,25 @@ jobs:
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
-          # Deploy: pull tag, rebuild, restart
+          # Deploy: clone if needed, pull tag, rebuild, restart
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'DEPLOY_SCRIPT'
             set -e
+
+            # First-time deploy: clone repo if it doesn't exist or isn't a git repo
+            if [ ! -d ~/fonzygrok/.git ]; then
+              echo "Initializing git repo..."
+              mkdir -p ~/fonzygrok
+              cd ~/fonzygrok
+              git init
+              git remote add origin https://github.com/johncrowleydev/fonzygrok.git
+            fi
+
             cd ~/fonzygrok
             git fetch origin --tags
-            git checkout ${{ github.ref_name }}
+            git checkout -f ${{ github.ref_name }}
+
             cd docker
-            docker compose down
+            docker compose down || true
             docker compose up -d --build
             echo "Deploy complete: ${{ github.ref_name }}"
           DEPLOY_SCRIPT
@@ -100,11 +111,24 @@ jobs:
       - name: Post-deploy health check
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           echo "Waiting for server to start..."
           sleep 15
-          curl -sf "http://$DEPLOY_HOST:9090/api/v1/health" || {
+
+          # Write SSH key for health check
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Health check via docker exec (port 9090 is internal-only)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker exec fonzygrok-server wget -q --spider http://localhost:9090/api/v1/health" || {
             echo "❌ Health check failed!"
             exit 1
           }
           echo "✅ Health check passed"
+
+          # Cleanup
+          rm -f ~/.ssh/deploy_key
