@@ -101,11 +101,7 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 			"GET": a.handleListTunnels,
 		}),
 	)))
-	a.mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(
-		a.methodRouteHandler(map[string]http.HandlerFunc{
-			"DELETE": a.handleDeleteTunnel,
-		}),
-	)))
+	a.mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(a.handleTunnelSubRoutes)))
 	a.mux.Handle("/api/v1/metrics", a.AuthMiddleware(http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleMetrics,
@@ -333,21 +329,28 @@ func (a *AdminAPI) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	active := a.tunnels.ListActive()
 
+	type rateLimitInfo struct {
+		RequestsPerSecond float64 `json:"requests_per_second"`
+		Burst             int     `json:"burst"`
+	}
+
 	type tunnelResp struct {
-		TunnelID        string `json:"tunnel_id"`
-		Name            string `json:"name"`
-		Subdomain       string `json:"subdomain"`
-		PublicURL       string `json:"public_url"`
-		Protocol        string `json:"protocol"`
-		ClientIP        string `json:"client_ip"`
-		TokenID         string `json:"token_id"`
-		LocalPort       int    `json:"local_port"`
-		AssignedPort    int    `json:"assigned_port,omitempty"`
-		ConnectedAt     string `json:"connected_at"`
-		BytesIn         int64  `json:"bytes_in"`
-		BytesOut        int64  `json:"bytes_out"`
-		RequestsProxied int64  `json:"requests_proxied"`
-		LastRequestAt   string `json:"last_request_at,omitempty"`
+		TunnelID        string         `json:"tunnel_id"`
+		Name            string         `json:"name"`
+		Subdomain       string         `json:"subdomain"`
+		PublicURL       string         `json:"public_url"`
+		Protocol        string         `json:"protocol"`
+		ClientIP        string         `json:"client_ip"`
+		TokenID         string         `json:"token_id"`
+		LocalPort       int            `json:"local_port"`
+		AssignedPort    int            `json:"assigned_port,omitempty"`
+		ConnectedAt     string         `json:"connected_at"`
+		BytesIn         int64          `json:"bytes_in"`
+		BytesOut        int64          `json:"bytes_out"`
+		RequestsProxied int64          `json:"requests_proxied"`
+		LastRequestAt   string         `json:"last_request_at,omitempty"`
+		RateLimit       *rateLimitInfo `json:"rate_limit,omitempty"`
+		ACL             *ACLConfig     `json:"acl,omitempty"`
 	}
 
 	items := make([]tunnelResp, 0, len(active))
@@ -375,30 +378,25 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 				item.LastRequestAt = snap.LastRequestAt.Format(time.RFC3339)
 			}
 		}
+		// Include rate limit info.
+		if rl := a.tunnels.RateLimiter(); rl != nil {
+			rps, burst := rl.GetLimit(entry.TunnelID)
+			item.RateLimit = &rateLimitInfo{
+				RequestsPerSecond: rps,
+				Burst:             burst,
+			}
+		}
+		// Include ACL info.
+		if entry.ACL != nil {
+			item.ACL = entry.ACL.ToConfig()
+		}
 		items = append(items, item)
 	}
 
 	a.writeJSON(w, http.StatusOK, map[string]interface{}{"tunnels": items})
 }
 
-// handleDeleteTunnel force-closes a tunnel per CON-002 §4.3.
-func (a *AdminAPI) handleDeleteTunnel(w http.ResponseWriter, r *http.Request) {
-	tunnelID := strings.TrimPrefix(r.URL.Path, "/api/v1/tunnels/")
-	if tunnelID == "" {
-		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Tunnel ID is required")
-		return
-	}
 
-	_, ok := a.tunnels.Lookup(tunnelID)
-	if !ok {
-		a.writeAdminError(w, http.StatusNotFound, "not_found", "Tunnel not found")
-		return
-	}
-
-	a.tunnels.Deregister(tunnelID)
-	a.logger.Info("admin: tunnel force-closed", "tunnel_id", tunnelID)
-	w.WriteHeader(http.StatusNoContent)
-}
 
 // handleMetrics returns aggregated metrics across all active tunnels.
 func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -473,4 +471,150 @@ func (a *AdminAPI) writeAdminError(w http.ResponseWriter, status int, code, mess
 		"error":   code,
 		"message": message,
 	})
+}
+
+// handleTunnelSubRoutes dispatches /api/v1/tunnels/:id/* subroutes.
+func (a *AdminAPI) handleTunnelSubRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/tunnels/")
+	parts := strings.SplitN(path, "/", 2)
+	tunnelID := parts[0]
+	subRoute := ""
+	if len(parts) > 1 {
+		subRoute = parts[1]
+	}
+
+	switch subRoute {
+	case "":
+		// DELETE /api/v1/tunnels/:id
+		if r.Method != "DELETE" {
+			a.writeAdminError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only DELETE is supported")
+			return
+		}
+		a.handleDeleteTunnelByID(w, r, tunnelID)
+	case "ratelimit":
+		if r.Method != "PUT" {
+			a.writeAdminError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only PUT is supported")
+			return
+		}
+		a.handleSetRateLimit(w, r, tunnelID)
+	case "acl":
+		switch r.Method {
+		case "PUT":
+			a.handleSetACL(w, r, tunnelID)
+		case "DELETE":
+			a.handleDeleteACL(w, r, tunnelID)
+		default:
+			a.writeAdminError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Only PUT and DELETE are supported")
+		}
+	default:
+		a.writeAdminError(w, http.StatusNotFound, "not_found", "Unknown tunnel sub-route")
+	}
+}
+
+// handleDeleteTunnelByID is the refactored delete handler.
+func (a *AdminAPI) handleDeleteTunnelByID(w http.ResponseWriter, r *http.Request, tunnelID string) {
+	if tunnelID == "" {
+		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Tunnel ID is required")
+		return
+	}
+
+	_, ok := a.tunnels.Lookup(tunnelID)
+	if !ok {
+		a.writeAdminError(w, http.StatusNotFound, "not_found", "Tunnel not found")
+		return
+	}
+
+	a.tunnels.Deregister(tunnelID)
+	a.logger.Info("admin: tunnel force-closed", "tunnel_id", tunnelID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetRateLimit handles PUT /api/v1/tunnels/:id/ratelimit.
+func (a *AdminAPI) handleSetRateLimit(w http.ResponseWriter, r *http.Request, tunnelID string) {
+	_, ok := a.tunnels.Lookup(tunnelID)
+	if !ok {
+		a.writeAdminError(w, http.StatusNotFound, "not_found", "Tunnel not found")
+		return
+	}
+
+	rl := a.tunnels.RateLimiter()
+	if rl == nil {
+		a.writeAdminError(w, http.StatusBadRequest, "not_configured", "Rate limiter not configured")
+		return
+	}
+
+	var body struct {
+		RequestsPerSecond float64 `json:"requests_per_second"`
+		Burst             int     `json:"burst"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Invalid JSON")
+		return
+	}
+	if body.RequestsPerSecond <= 0 || body.Burst <= 0 {
+		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "requests_per_second and burst must be positive")
+		return
+	}
+
+	rl.SetLimit(tunnelID, body.RequestsPerSecond, body.Burst)
+	a.logger.Info("admin: rate limit set",
+		"tunnel_id", tunnelID,
+		"rps", body.RequestsPerSecond,
+		"burst", body.Burst,
+	)
+
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tunnel_id":           tunnelID,
+		"requests_per_second": body.RequestsPerSecond,
+		"burst":               body.Burst,
+	})
+}
+
+// handleSetACL handles PUT /api/v1/tunnels/:id/acl.
+func (a *AdminAPI) handleSetACL(w http.ResponseWriter, r *http.Request, tunnelID string) {
+	entry, ok := a.tunnels.Lookup(tunnelID)
+	if !ok {
+		a.writeAdminError(w, http.StatusNotFound, "not_found", "Tunnel not found")
+		return
+	}
+
+	var body struct {
+		Mode  string   `json:"mode"`
+		CIDRs []string `json:"cidrs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Invalid JSON")
+		return
+	}
+
+	acl, err := ParseACL(body.Mode, body.CIDRs)
+	if err != nil {
+		a.writeAdminError(w, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+
+	entry.ACL = acl
+	a.logger.Info("admin: ACL set",
+		"tunnel_id", tunnelID,
+		"mode", body.Mode,
+		"cidrs", body.CIDRs,
+	)
+
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tunnel_id": tunnelID,
+		"acl":       acl.ToConfig(),
+	})
+}
+
+// handleDeleteACL handles DELETE /api/v1/tunnels/:id/acl.
+func (a *AdminAPI) handleDeleteACL(w http.ResponseWriter, r *http.Request, tunnelID string) {
+	entry, ok := a.tunnels.Lookup(tunnelID)
+	if !ok {
+		a.writeAdminError(w, http.StatusNotFound, "not_found", "Tunnel not found")
+		return
+	}
+
+	entry.ACL = nil
+	a.logger.Info("admin: ACL removed", "tunnel_id", tunnelID)
+	w.WriteHeader(http.StatusNoContent)
 }

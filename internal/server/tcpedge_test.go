@@ -49,7 +49,7 @@ func TestTCPEdge_AssignPort(t *testing.T) {
 }
 
 func TestTCPEdge_AssignPortUnique(t *testing.T) {
-	te, _, st := newTestTCPEdge(t, 50220, 50225)
+	te, _, st := newTestTCPEdge(t, 50520, 50535)
 	defer st.Close()
 	defer te.Shutdown()
 

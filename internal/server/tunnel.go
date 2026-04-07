@@ -44,17 +44,20 @@ type TunnelEntry struct {
 	CreatedAt time.Time
 	// Metrics holds per-tunnel traffic counters.
 	Metrics *TunnelMetrics
+	// ACL is the optional IP access control list for this tunnel.
+	ACL *ACL
 }
 
 // TunnelManager is the central registry of active tunnels.
 // It maps tunnel IDs to SSH sessions and manages the tunnel lifecycle.
 // Thread-safe via sync.RWMutex. Implements TunnelRegistrar.
 type TunnelManager struct {
-	domain  string
-	scheme  string // "http" or "https"
-	store   *store.Store
-	logger  *slog.Logger
-	tcpEdge *TCPEdge // optional: TCP port allocator
+	domain      string
+	scheme      string // "http" or "https"
+	store       *store.Store
+	logger      *slog.Logger
+	tcpEdge     *TCPEdge      // optional: TCP port allocator
+	rateLimiter *RateLimiter  // optional: per-tunnel rate limiter
 
 	mu        sync.RWMutex
 	tunnels   map[string]*TunnelEntry         // tunnelID → entry
@@ -86,6 +89,16 @@ func (tm *TunnelManager) SetScheme(scheme string) {
 // SetTCPEdge sets the TCP edge used for port allocation in TCP tunnels.
 func (tm *TunnelManager) SetTCPEdge(tcpEdge *TCPEdge) {
 	tm.tcpEdge = tcpEdge
+}
+
+// SetRateLimiter sets the rate limiter for per-tunnel rate limiting.
+func (tm *TunnelManager) SetRateLimiter(rl *RateLimiter) {
+	tm.rateLimiter = rl
+}
+
+// RateLimiter returns the configured rate limiter (may be nil).
+func (tm *TunnelManager) RateLimiter() *RateLimiter {
+	return tm.rateLimiter
 }
 
 // Register creates a new tunnel for the given session and request.
@@ -248,6 +261,11 @@ func (tm *TunnelManager) Deregister(tunnelID string) {
 	// Release TCP port outside the lock to avoid deadlock with TCPEdge.
 	if entry.Protocol == "tcp" && entry.AssignedPort > 0 && tm.tcpEdge != nil {
 		tm.tcpEdge.ReleasePort(entry.AssignedPort)
+	}
+
+	// Clean up rate limiter state.
+	if tm.rateLimiter != nil {
+		tm.rateLimiter.Remove(tunnelID)
 	}
 
 	tm.logger.Info("tunnel: deregistered", "tunnel_id", tunnelID, "name", entry.Name)

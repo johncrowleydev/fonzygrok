@@ -35,13 +35,14 @@ type EdgeConfig struct {
 // by extracting the subdomain from the Host header and proxying the
 // request through an SSH channel. Per CON-002 §3.
 type EdgeRouter struct {
-	config           EdgeConfig
-	tunnels          *TunnelManager
-	logger           *slog.Logger
-	server           *http.Server
-	tlsMgr           *TLSManager
-	redirectSrv      *http.Server   // HTTP→HTTPS redirect server (when TLS enabled)
-	baseDomainHandler http.Handler  // fallback handler for apex/base domain (dashboard)
+	config            EdgeConfig
+	tunnels           *TunnelManager
+	logger            *slog.Logger
+	server            *http.Server
+	tlsMgr            *TLSManager
+	redirectSrv       *http.Server   // HTTP→HTTPS redirect server (when TLS enabled)
+	baseDomainHandler http.Handler   // fallback handler for apex/base domain (dashboard)
+	rateLimiter       *RateLimiter   // per-tunnel rate limiter
 }
 
 // NewEdgeRouter creates a new HTTP edge router.
@@ -201,6 +202,29 @@ func (e *EdgeRouter) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		e.writeError(w, http.StatusNotFound, "tunnel_not_found", "No tunnel matches this hostname")
 		return
+	}
+
+	// Rate limit check.
+	if e.rateLimiter != nil && !e.rateLimiter.Allow(entry.TunnelID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Fonzygrok-Error", "true")
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":               "rate_limit_exceeded",
+			"message":             "Too many requests to this tunnel",
+			"retry_after_seconds": 1,
+		})
+		return
+	}
+
+	// IP ACL check (use source IP, NOT X-Forwarded-For to prevent spoofing).
+	if entry.ACL != nil {
+		clientIP := extractIP(r.RemoteAddr)
+		if clientIP != nil && !entry.ACL.Check(clientIP) {
+			e.writeError(w, http.StatusForbidden, "ip_blocked", "Your IP is not allowed to access this tunnel")
+			return
+		}
 	}
 
 	e.proxyRequest(w, r, entry)
@@ -407,4 +431,19 @@ func (e *EdgeRouter) requestProto(r *http.Request) string {
 		return fp
 	}
 	return "http"
+}
+
+// SetRateLimiter attaches a rate limiter to the edge router.
+// Must be called before Start().
+func (e *EdgeRouter) SetRateLimiter(rl *RateLimiter) {
+	e.rateLimiter = rl
+}
+
+// extractIP parses a net.IP from an addr string like "1.2.3.4:5678".
+func extractIP(addr string) net.IP {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	return net.ParseIP(host)
 }

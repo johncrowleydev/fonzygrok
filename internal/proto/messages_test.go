@@ -2,6 +2,7 @@ package proto
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestTunnelRequestRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal TunnelRequest: %v", err)
 	}
-	if got != orig {
+	if !reflect.DeepEqual(got, orig) {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", got, orig)
 	}
 }
@@ -124,7 +125,7 @@ func TestControlMessageRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(got.Payload, &gotReq); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	if gotReq != req {
+	if !reflect.DeepEqual(gotReq, req) {
 		t.Errorf("payload mismatch: got %+v, want %+v", gotReq, req)
 	}
 }

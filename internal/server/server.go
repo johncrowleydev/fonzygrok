@@ -27,6 +27,10 @@ type ServerConfig struct {
 	TCPPortMin int
 	// TCPPortMax is the high end of the TCP tunnel port range (inclusive).
 	TCPPortMax int
+	// RateLimit is the default requests per second per tunnel. 0 = disabled.
+	RateLimit float64
+	// RateBurst is the default burst size for rate limiting.
+	RateBurst int
 	// SSH configuration.
 	SSH SSHConfig
 	// Edge (public HTTP) configuration.
@@ -40,14 +44,15 @@ type ServerConfig struct {
 // Server is the top-level orchestrator that wires all subsystems together:
 // store → SSH server → tunnel manager → edge router → admin API.
 type Server struct {
-	config  ServerConfig
-	logger  *slog.Logger
-	store   *store.Store
-	ssh     *SSHServer
-	tunnels *TunnelManager
-	edge    *EdgeRouter
-	admin   *AdminAPI
-	tcpEdge *TCPEdge
+	config      ServerConfig
+	logger      *slog.Logger
+	store       *store.Store
+	ssh         *SSHServer
+	tunnels     *TunnelManager
+	edge        *EdgeRouter
+	admin       *AdminAPI
+	tcpEdge     *TCPEdge
+	rateLimiter *RateLimiter
 }
 
 // deriveApexDomain strips the first label from a domain to derive the apex.
@@ -105,6 +110,20 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 		)
 	}
 
+	// Create rate limiter if configured.
+	var rateLimiter *RateLimiter
+	if config.RateLimit > 0 && config.RateBurst > 0 {
+		rateLimiter = NewRateLimiter(config.RateLimit, config.RateBurst)
+		tm.SetRateLimiter(rateLimiter)
+		if tcpEdge != nil {
+			tcpEdge.SetRateLimiter(rateLimiter)
+		}
+		logger.Info("rate limiter configured",
+			"rps", config.RateLimit,
+			"burst", config.RateBurst,
+		)
+	}
+
 	// Wire SSH session callback → control handler → tunnel manager.
 	sshSrv.OnNewSession(func(sess Session, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
 		handler := NewControlHandler(&sess, tm, logger)
@@ -123,6 +142,11 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 
 	// Create edge router.
 	edge := NewEdgeRouter(config.Edge, tm, logger)
+
+	// Wire rate limiter to edge router.
+	if rateLimiter != nil {
+		edge.SetRateLimiter(rateLimiter)
+	}
 
 	// Wire TLS if enabled.
 	if config.TLS.Enabled {
@@ -166,14 +190,15 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 	edge.SetBaseDomainHandler(admin.Mux())
 
 	return &Server{
-		config:  config,
-		logger:  logger,
-		store:   st,
-		ssh:     sshSrv,
-		tunnels: tm,
-		edge:    edge,
-		admin:   admin,
-		tcpEdge: tcpEdge,
+		config:      config,
+		logger:      logger,
+		store:       st,
+		ssh:         sshSrv,
+		tunnels:     tm,
+		edge:        edge,
+		admin:       admin,
+		tcpEdge:     tcpEdge,
+		rateLimiter: rateLimiter,
 	}, nil
 }
 

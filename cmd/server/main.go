@@ -45,8 +45,8 @@ func main() {
 // serveCmd starts all server subsystems.
 func serveCmd() *cobra.Command {
 	var (
-		sshAddr    string
-		httpAddr   string
+		sshAddr       string
+		httpAddr     string
 		adminAddr    string
 		dataDir      string
 		domain       string
@@ -55,6 +55,8 @@ func serveCmd() *cobra.Command {
 		tlsCertDir   string
 		configPath   string
 		tcpPortRange string
+		rateLimit    float64
+		rateBurst    int
 	)
 
 	cmd := &cobra.Command{
@@ -122,6 +124,8 @@ func serveCmd() *cobra.Command {
 				ApexDomain: merged.HTTP.ApexDomain,
 				TCPPortMin: merged.HTTP.TCPPortMin,
 				TCPPortMax: merged.HTTP.TCPPortMax,
+				RateLimit:  rateLimit,
+				RateBurst:  rateBurst,
 				SSH: server.SSHConfig{
 					Addr: merged.SSH.Addr,
 				},
@@ -170,6 +174,8 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
 	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")
 	cmd.Flags().StringVar(&tcpPortRange, "tcp-port-range", "40000-60000", "TCP tunnel port range (MIN-MAX)")
+	cmd.Flags().Float64Var(&rateLimit, "rate-limit", 100, "Default requests per second per tunnel (0 = disabled)")
+	cmd.Flags().IntVar(&rateBurst, "rate-burst", 200, "Default burst size for rate limiting")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file")
 
 	return cmd

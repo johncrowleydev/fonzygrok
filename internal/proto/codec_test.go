@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"reflect"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func TestEncodeDecode(t *testing.T) {
 	if err := json.Unmarshal(got.Payload, &gotReq); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
-	if gotReq != req {
+	if !reflect.DeepEqual(gotReq, req) {
 		t.Errorf("payload: got %+v, want %+v", gotReq, req)
 	}
 }

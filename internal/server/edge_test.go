@@ -822,6 +822,173 @@ func TestExtractSubdomainWithApexDomain(t *testing.T) {
 	}
 }
 
+// --- T-035A: Rate Limiting ---
+
+func TestEdgeRateLimited429(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.example.com", st, logger)
+
+	// Very restrictive: 1 req/s, burst 1.
+	rl := NewRateLimiter(1, 1)
+	tm.SetRateLimiter(rl)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.example.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+	edge := NewEdgeRouter(config, tm, logger)
+	edge.SetRateLimiter(rl)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	assignment, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	host := assignment.TunnelID + ".tunnel.example.com"
+
+	// First request should pass (burst).
+	req1 := httptest.NewRequest("GET", "http://"+host+"/", nil)
+	req1.Host = host
+	w1 := httptest.NewRecorder()
+	edge.Handler().ServeHTTP(w1, req1)
+
+	// Could be 502 (no SSH) — that's fine, it means it wasn't rate limited.
+	if w1.Code == http.StatusTooManyRequests {
+		t.Fatal("first request should not be rate limited")
+	}
+
+	// Second request should be rate limited.
+	req2 := httptest.NewRequest("GET", "http://"+host+"/", nil)
+	req2.Host = host
+	w2 := httptest.NewRecorder()
+	edge.Handler().ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d", w2.Code)
+	}
+
+	// Check response headers.
+	if ra := w2.Header().Get("Retry-After"); ra != "1" {
+		t.Errorf("Retry-After: got %q, want %q", ra, "1")
+	}
+	if fe := w2.Header().Get("X-Fonzygrok-Error"); fe != "true" {
+		t.Errorf("X-Fonzygrok-Error: got %q, want %q", fe, "true")
+	}
+
+	// Check response body.
+	var errResp map[string]interface{}
+	json.Unmarshal(w2.Body.Bytes(), &errResp)
+	if errResp["error"] != "rate_limit_exceeded" {
+		t.Errorf("error: got %v, want %q", errResp["error"], "rate_limit_exceeded")
+	}
+	if errResp["retry_after_seconds"] != float64(1) {
+		t.Errorf("retry_after_seconds: got %v, want 1", errResp["retry_after_seconds"])
+	}
+}
+
+// --- T-037A: IP ACL ---
+
+func TestEdgeIPBlocked403(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.example.com", st, logger)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.example.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+	edge := NewEdgeRouter(config, tm, logger)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	assignment, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	// Set ACL that only allows 10.0.0.0/8.
+	entry, _ := tm.Lookup(assignment.TunnelID)
+	acl, _ := ParseACL("allow", []string{"10.0.0.0/8"})
+	entry.ACL = acl
+
+	host := assignment.TunnelID + ".tunnel.example.com"
+
+	// Request from blocked IP.
+	req := httptest.NewRequest("GET", "http://"+host+"/", nil)
+	req.Host = host
+	req.RemoteAddr = "203.0.113.1:12345" // Not in 10.0.0.0/8.
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+
+	var errResp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["error"] != "ip_blocked" {
+		t.Errorf("error: got %q, want %q", errResp["error"], "ip_blocked")
+	}
+}
+
+func TestEdgeIPAllowed(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.example.com", st, logger)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.example.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+	edge := NewEdgeRouter(config, tm, logger)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	assignment, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	// Set ACL that allows this IP.
+	entry, _ := tm.Lookup(assignment.TunnelID)
+	acl, _ := ParseACL("allow", []string{"10.0.0.0/8"})
+	entry.ACL = acl
+
+	host := assignment.TunnelID + ".tunnel.example.com"
+
+	// Request from allowed IP.
+	req := httptest.NewRequest("GET", "http://"+host+"/", nil)
+	req.Host = host
+	req.RemoteAddr = "10.0.0.5:12345" // In 10.0.0.0/8.
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	// Should NOT be 403 — should proceed to proxy (502 since no SSH conn).
+	if w.Code == http.StatusForbidden {
+		t.Error("expected request from allowed IP to not be blocked")
+	}
+}
+
 // Suppress unused import warnings for packages used in test helpers.
 var (
 	_ = net.SplitHostPort

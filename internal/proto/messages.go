@@ -22,10 +22,11 @@ type ControlMessage struct {
 
 // TunnelRequest is sent by the client to request a new tunnel.
 type TunnelRequest struct {
-	LocalPort int    `json:"local_port"`
-	Protocol  string `json:"protocol"`
-	Subdomain string `json:"subdomain,omitempty"`
-	Name      string `json:"name,omitempty"` // optional user-specified subdomain name
+	LocalPort int      `json:"local_port"`
+	Protocol  string   `json:"protocol"`
+	Subdomain string   `json:"subdomain,omitempty"`
+	Name      string   `json:"name,omitempty"`       // optional user-specified subdomain name
+	AllowIPs  []string `json:"allow_ips,omitempty"`   // optional IP whitelist CIDRs
 }
 
 // TunnelAssignment is sent by the server after a successful tunnel setup.

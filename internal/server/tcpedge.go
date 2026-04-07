@@ -15,14 +15,15 @@ import (
 // it assigns a port from a configured range, starts a net.Listener,
 // and proxies accepted connections through SSH "tcp-proxy" channels.
 type TCPEdge struct {
-	portMin   int
-	portMax   int
-	listeners map[int]net.Listener // assigned port → listener
-	tunnelMgr *TunnelManager
-	mu        sync.Mutex
-	logger    *slog.Logger
-	ctx       context.Context
-	cancel    context.CancelFunc
+	portMin     int
+	portMax     int
+	listeners   map[int]net.Listener // assigned port → listener
+	tunnelMgr   *TunnelManager
+	rateLimiter *RateLimiter
+	mu          sync.Mutex
+	logger      *slog.Logger
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 // NewTCPEdge creates a TCP edge that allocates ports in [portMin, portMax].
@@ -98,6 +99,11 @@ func (t *TCPEdge) Shutdown() {
 	t.listeners = make(map[int]net.Listener)
 }
 
+// SetRateLimiter attaches a rate limiter for TCP connection attempts.
+func (t *TCPEdge) SetRateLimiter(rl *RateLimiter) {
+	t.rateLimiter = rl
+}
+
 // acceptLoop accepts TCP connections on the listener and proxies each
 // through an SSH "tcp-proxy" channel to the client.
 func (t *TCPEdge) acceptLoop(port int, ln net.Listener) {
@@ -144,6 +150,29 @@ func (t *TCPEdge) handleConnection(port int, conn net.Conn) {
 			"remote_addr", conn.RemoteAddr().String(),
 		)
 		return
+	}
+
+	// Rate limit check (connection attempts, not bytes).
+	if t.rateLimiter != nil && !t.rateLimiter.Allow(entry.TunnelID) {
+		t.logger.Warn("tcp-edge: rate limited",
+			"tunnel_id", entry.TunnelID,
+			"port", port,
+			"remote_addr", conn.RemoteAddr().String(),
+		)
+		return
+	}
+
+	// IP ACL check.
+	if entry.ACL != nil {
+		clientIP := extractIP(conn.RemoteAddr().String())
+		if clientIP != nil && !entry.ACL.Check(clientIP) {
+			t.logger.Warn("tcp-edge: IP blocked by ACL",
+				"tunnel_id", entry.TunnelID,
+				"port", port,
+				"remote_addr", conn.RemoteAddr().String(),
+			)
+			return
+		}
 	}
 
 	// Open SSH "tcp-proxy" channel to the client.

@@ -456,3 +456,210 @@ func TestContentTypeJSON(t *testing.T) {
 		t.Errorf("Content-Type: got %q, want %q", ct, "application/json")
 	}
 }
+
+// --- T-035A: Rate Limit Admin API ---
+
+func TestSetRateLimit(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	// Configure a rate limiter.
+	rl := NewRateLimiter(100, 200)
+	tm.SetRateLimiter(rl)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	// PUT custom rate limit.
+	body := `{"requests_per_second": 50, "burst": 100}`
+	req := authReq(httptest.NewRequest("PUT", "/api/v1/tunnels/"+a.TunnelID+"/ratelimit", strings.NewReader(body)), token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify the custom limit was set.
+	rps, burst := rl.GetLimit(a.TunnelID)
+	if rps != 50 || burst != 100 {
+		t.Errorf("rate limit: got rps=%v burst=%d, want 50/100", rps, burst)
+	}
+}
+
+func TestSetRateLimitNotFound(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	rl := NewRateLimiter(100, 200)
+	tm.SetRateLimiter(rl)
+
+	body := `{"requests_per_second": 50, "burst": 100}`
+	req := authReq(httptest.NewRequest("PUT", "/api/v1/tunnels/nonexistent/ratelimit", strings.NewReader(body)), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestListTunnelsIncludesRateLimit(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	rl := NewRateLimiter(100, 200)
+	tm.SetRateLimiter(rl)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	req := authReq(httptest.NewRequest("GET", "/api/v1/tunnels", nil), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	var resp struct {
+		Tunnels []struct {
+			RateLimit struct {
+				RequestsPerSecond float64 `json:"requests_per_second"`
+				Burst             int     `json:"burst"`
+			} `json:"rate_limit"`
+		} `json:"tunnels"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp.Tunnels) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(resp.Tunnels))
+	}
+	if resp.Tunnels[0].RateLimit.RequestsPerSecond != 100 {
+		t.Errorf("rate_limit.rps: got %v, want 100", resp.Tunnels[0].RateLimit.RequestsPerSecond)
+	}
+	if resp.Tunnels[0].RateLimit.Burst != 200 {
+		t.Errorf("rate_limit.burst: got %d, want 200", resp.Tunnels[0].RateLimit.Burst)
+	}
+}
+
+// --- T-037A: ACL Admin API ---
+
+func TestSetACL(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	body := `{"mode": "allow", "cidrs": ["10.0.0.0/8", "192.168.1.0/24"]}`
+	req := authReq(httptest.NewRequest("PUT", "/api/v1/tunnels/"+a.TunnelID+"/acl", strings.NewReader(body)), token)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify ACL was set.
+	entry, _ := tm.Lookup(a.TunnelID)
+	if entry.ACL == nil {
+		t.Fatal("expected ACL to be set")
+	}
+	if entry.ACL.Mode != "allow" {
+		t.Errorf("ACL mode: got %q, want %q", entry.ACL.Mode, "allow")
+	}
+	if len(entry.ACL.AllowCIDRs) != 2 {
+		t.Errorf("ACL CIDRs: got %d, want 2", len(entry.ACL.AllowCIDRs))
+	}
+}
+
+func TestDeleteACL(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	// Set ACL first.
+	entry, _ := tm.Lookup(a.TunnelID)
+	acl, _ := ParseACL("allow", []string{"10.0.0.0/8"})
+	entry.ACL = acl
+
+	// Delete it.
+	req := authReq(httptest.NewRequest("DELETE", "/api/v1/tunnels/"+a.TunnelID+"/acl", nil), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d", w.Code)
+	}
+
+	// Verify ACL was removed.
+	entry2, _ := tm.Lookup(a.TunnelID)
+	if entry2.ACL != nil {
+		t.Error("expected ACL to be nil after delete")
+	}
+}
+
+func TestSetACLInvalidCIDR(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	body := `{"mode": "allow", "cidrs": ["not-a-cidr"]}`
+	req := authReq(httptest.NewRequest("PUT", "/api/v1/tunnels/"+a.TunnelID+"/acl", strings.NewReader(body)), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListTunnelsIncludesACL(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	session := &Session{TokenID: "tok_test", RemoteAddr: "127.0.0.1:9999"}
+	a, _ := tm.Register(session, &proto.TunnelRequest{LocalPort: 3000, Protocol: "http"})
+
+	// Set ACL.
+	entry, _ := tm.Lookup(a.TunnelID)
+	acl, _ := ParseACL("deny", []string{"192.168.0.0/16"})
+	entry.ACL = acl
+
+	req := authReq(httptest.NewRequest("GET", "/api/v1/tunnels", nil), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	var resp struct {
+		Tunnels []struct {
+			ACL *struct {
+				Mode  string   `json:"mode"`
+				CIDRs []string `json:"cidrs"`
+			} `json:"acl"`
+		} `json:"tunnels"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp.Tunnels) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(resp.Tunnels))
+	}
+	if resp.Tunnels[0].ACL == nil {
+		t.Fatal("expected ACL in tunnel list")
+	}
+	if resp.Tunnels[0].ACL.Mode != "deny" {
+		t.Errorf("ACL mode: got %q, want %q", resp.Tunnels[0].ACL.Mode, "deny")
+	}
+	if len(resp.Tunnels[0].ACL.CIDRs) != 1 {
+		t.Errorf("ACL CIDRs: got %d, want 1", len(resp.Tunnels[0].ACL.CIDRs))
+	}
+}
