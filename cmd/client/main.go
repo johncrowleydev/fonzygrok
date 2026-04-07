@@ -232,11 +232,7 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 	if protocol == "tcp" {
 		// Extract host from server address for TCP URL display.
 		serverHost := connector.Host()
-		// AssignedPort will be zero until T-068 lands — use 0 as placeholder.
-		// TODO(SPR-020): use assignment.AssignedPort after T-068 is merged.
-		assignedPort := 0
-		_ = assignment // suppress unused lint until AssignedPort field exists
-		display.TunnelEstablishedTCP(assignment.Name, serverHost, assignedPort, port, inspectAddr)
+		display.TunnelEstablishedTCP(assignment.Name, serverHost, assignment.AssignedPort, port, inspectAddr)
 	} else {
 		display.TunnelEstablished(assignment.Name, assignment.PublicURL, port, inspectAddr)
 	}
