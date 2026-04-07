@@ -300,6 +300,7 @@ func adminCreateCmd() *cobra.Command {
 	var (
 		username string
 		email    string
+		password string
 		dataDir  string
 	)
 
@@ -318,14 +319,16 @@ func adminCreateCmd() *cobra.Command {
 				return fmt.Errorf("user %q already exists (ID: %s)", username, existing.ID)
 			}
 
-			// Prompt for password (no echo).
-			fmt.Print("Password: ")
-			passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
-			fmt.Println() // Newline after hidden input.
-			if err != nil {
-				return fmt.Errorf("read password: %w", err)
+			// Use --password flag if provided; otherwise prompt interactively.
+			if password == "" {
+				fmt.Print("Password: ")
+				passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+				fmt.Println() // Newline after hidden input.
+				if err != nil {
+					return fmt.Errorf("read password: %w", err)
+				}
+				password = string(passwordBytes)
 			}
-			password := string(passwordBytes)
 
 			// Validate password strength.
 			if err := auth.ValidatePasswordStrength(password); err != nil {
@@ -357,6 +360,7 @@ func adminCreateCmd() *cobra.Command {
 	cmd.MarkFlagRequired("username")
 	cmd.Flags().StringVar(&email, "email", "", "Admin email (required)")
 	cmd.MarkFlagRequired("email")
+	cmd.Flags().StringVar(&password, "password", "", "Admin password (if omitted, prompts interactively)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory")
 
 	return cmd
