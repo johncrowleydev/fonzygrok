@@ -8,11 +8,11 @@ agents: [coder]
 tags: [project-management, backlog, development]
 related: [PRJ-001, BLU-001, CON-001, CON-002]
 created: 2026-03-31
-updated: 2026-04-02
-version: 4.0.0
+updated: 2026-04-07
+version: 7.0.0
 ---
 
-> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. **All items are complete.** v1.2.0 ready for tagging.
+> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. **All items are complete.** v1.2.0 released. Database migrated from SQLite to PostgreSQL.
 
 # Developer Backlog — Fonzygrok
 
@@ -49,6 +49,8 @@ SPR-004A ✅    │
    SPR-011–012 ✅ (rate limiting + IP ACL)
          │
    SPR-013 ✅ (integration, E2E, docs → v1.2.0)
+         │
+   Infra  ✅ (SQLite → PostgreSQL, SCP deploy, Dockerfile.prod)
 ```
 
 ---
