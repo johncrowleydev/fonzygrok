@@ -33,12 +33,13 @@ const (
 // DEPENDENCIES: store.Store for data, auth.JWTManager for sessions,
 // TunnelManager for live tunnel data.
 type Dashboard struct {
-	store   *store.Store
-	jwt     *auth.JWTManager
-	tunnels *TunnelManager
-	logger  *slog.Logger
-	pages   map[string]*template.Template // page name → layout+page template
-	partial *template.Template
+	store      *store.Store
+	jwt        *auth.JWTManager
+	tunnels    *TunnelManager
+	logger     *slog.Logger
+	pages      map[string]*template.Template // page name → layout+page template
+	partial    *template.Template
+	tlsEnabled bool // when true, session cookies get Secure: true
 }
 
 // templateFuncMap returns the shared template function map.
@@ -97,6 +98,12 @@ func NewDashboard(st *store.Store, jwt *auth.JWTManager, tunnels *TunnelManager,
 	)
 
 	return d
+}
+
+// SetTLSEnabled configures whether TLS is active. When true, session cookies
+// are set with Secure: true so they're only sent over HTTPS.
+func (d *Dashboard) SetTLSEnabled(enabled bool) {
+	d.tlsEnabled = enabled
 }
 
 
@@ -596,7 +603,7 @@ func (d *Dashboard) setSessionCookie(w http.ResponseWriter, user *store.User) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set true in production with TLS
+		Secure:   d.tlsEnabled,
 		MaxAge:   int(24 * time.Hour / time.Second),
 		SameSite: http.SameSiteLaxMode,
 	})

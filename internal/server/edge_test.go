@@ -619,8 +619,212 @@ func assertHasErrorHeaders(t *testing.T, w *httptest.ResponseRecorder) {
 	}
 }
 
+// --- T-069: Apex Domain + Dashboard Fallback ---
+
+// TestApexDomainRoutesToFallback verifies that requests to the apex domain
+// (e.g., "fonzygrok.com") are routed to the fallback handler (dashboard),
+// not the default server info JSON.
+func TestApexDomainRoutesToFallback(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.fonzygrok.com", st, logger)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.fonzygrok.com",
+		ApexDomain:   "fonzygrok.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+
+	edge := NewEdgeRouter(config, tm, logger)
+
+	// Set a fallback handler that returns a known response.
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("dashboard-fallback"))
+	})
+	edge.SetBaseDomainHandler(fallback)
+
+	// Request to apex domain should hit fallback.
+	req := httptest.NewRequest("GET", "http://fonzygrok.com/", nil)
+	req.Host = "fonzygrok.com"
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for apex domain, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "dashboard-fallback") {
+		t.Errorf("expected fallback handler response, got: %s", w.Body.String())
+	}
+}
+
+// TestBaseDomainRoutesToFallback verifies that the tunnel base domain
+// also routes to the fallback handler when set.
+func TestBaseDomainRoutesToFallback(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.fonzygrok.com", st, logger)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.fonzygrok.com",
+		ApexDomain:   "fonzygrok.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+
+	edge := NewEdgeRouter(config, tm, logger)
+
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("base-domain-fallback"))
+	})
+	edge.SetBaseDomainHandler(fallback)
+
+	req := httptest.NewRequest("GET", "http://tunnel.fonzygrok.com/", nil)
+	req.Host = "tunnel.fonzygrok.com"
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "base-domain-fallback") {
+		t.Errorf("expected fallback response, got: %s", w.Body.String())
+	}
+}
+
+// TestNoFallbackReturnsServerInfo verifies that when no fallback handler is set,
+// base domain requests still return the server info JSON (backward compatibility).
+func TestNoFallbackReturnsServerInfo(t *testing.T) {
+	edge, _, st := newTestEdgeRouter(t)
+	defer st.Close()
+
+	// No fallback handler set — should return server info.
+	req := httptest.NewRequest("GET", "http://tunnel.example.com/", nil)
+	req.Host = "tunnel.example.com"
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var info map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
+		t.Fatalf("expected JSON response: %v", err)
+	}
+	if info["service"] != "fonzygrok" {
+		t.Errorf("expected service=fonzygrok, got %v", info["service"])
+	}
+}
+
+// TestSubdomainRoutesToTunnelNotFallback verifies that subdomain requests
+// still route to tunnels, even when a fallback handler is set.
+func TestSubdomainRoutesToTunnelNotFallback(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	defer st.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	tm := NewTunnelManager("tunnel.example.com", st, logger)
+
+	config := EdgeConfig{
+		Addr:         "127.0.0.1:0",
+		BaseDomain:   "tunnel.example.com",
+		ApexDomain:   "example.com",
+		ProxyTimeout: 2 * time.Second,
+	}
+
+	edge := NewEdgeRouter(config, tm, logger)
+
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("dashboard"))
+	})
+	edge.SetBaseDomainHandler(fallback)
+
+	// Register a tunnel.
+	session := &Session{TokenID: "tok_test123456", RemoteAddr: "127.0.0.1:9999"}
+	assignment, err := tm.Register(session, &proto.TunnelRequest{
+		LocalPort: 3000,
+		Protocol:  "http",
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Request with subdomain — should try to proxy (502 since no real SSH).
+	host := assignment.TunnelID + ".tunnel.example.com"
+	req := httptest.NewRequest("GET", "http://"+host+"/", nil)
+	req.Host = host
+	w := httptest.NewRecorder()
+
+	edge.Handler().ServeHTTP(w, req)
+
+	// Should be 502 (tunnel found but no SSH conn), NOT 200 from fallback.
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("expected 502 for subdomain request, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// TestExtractSubdomainWithApexDomain verifies extractSubdomain handles apex.
+func TestExtractSubdomainWithApexDomain(t *testing.T) {
+	edge := &EdgeRouter{
+		config: EdgeConfig{
+			BaseDomain: "tunnel.fonzygrok.com",
+			ApexDomain: "fonzygrok.com",
+		},
+	}
+
+	tests := []struct {
+		host     string
+		expected string
+	}{
+		{"fonzygrok.com", ""},             // apex domain
+		{"fonzygrok.com:443", ""},         // apex with port
+		{"tunnel.fonzygrok.com", ""},      // base domain
+		{"abc.tunnel.fonzygrok.com", "abc"}, // subdomain
+		{"FONZYGROK.COM", ""},             // case-insensitive apex
+		{"other.com", ""},                 // unrelated
+	}
+
+	for _, tt := range tests {
+		got := edge.extractSubdomain(tt.host)
+		if got != tt.expected {
+			t.Errorf("extractSubdomain(%q) = %q, want %q", tt.host, got, tt.expected)
+		}
+	}
+}
+
 // Suppress unused import warnings for packages used in test helpers.
 var (
 	_ = net.SplitHostPort
 	_ = fmt.Sprintf
 )
+

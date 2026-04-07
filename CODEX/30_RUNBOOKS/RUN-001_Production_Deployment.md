@@ -55,10 +55,9 @@ You need **4 inbound rules**. This is critical — if you miss one, something wo
 | SSH | 22 | Your IP (or `0.0.0.0/0`) | So you can SSH into the server |
 | Custom TCP | 2222 | `0.0.0.0/0` | fonzygrok SSH tunnel port (clients connect here) |
 | HTTP | 80 | `0.0.0.0/0` | HTTP redirect + ACME challenge (TLS) or edge traffic |
-| HTTPS | 443 | `0.0.0.0/0` | Public tunnel traffic (TLS edge router) |
-| Custom TCP | 9090 | Your IP only | Admin API (token management) — **NOT** `0.0.0.0/0` |
+| HTTPS | 443 | `0.0.0.0/0` | Public tunnel traffic + dashboard (TLS edge router) |
 
-> ⚠️ **Port 9090 should be restricted to your IP only.** It has no authentication — anyone with access can create/delete tokens.
+> ⚠️ **Port 9090 is no longer required for external access.** The dashboard is now served on `:443` via the edge router. The admin API still listens on `127.0.0.1:9090` internally for health checks and direct API access.
 
 ### 1.3 Allocate an Elastic IP
 
@@ -152,15 +151,19 @@ Set these values in the `.env` file:
 
 ```env
 DOMAIN=tunnel.fonzygrok.com
+APEX_DOMAIN=fonzygrok.com
 SSH_PORT=2222
 HTTP_PORT=80
 HTTPS_PORT=443
 ADMIN_PORT=9090
 TLS_ENABLED=true
-FONZYGROK_VERSION=v1.1.0
+FONZYGROK_VERSION=v1.2.0
 ```
 
-> **Key change:** `HTTP_PORT=80` (not 8080). You want public traffic on port 80 so browsers work without specifying a port.
+> **Key changes:**
+> - `HTTP_PORT=80` (not 8080). You want public traffic on port 80 so browsers work without specifying a port.
+> - `APEX_DOMAIN=fonzygrok.com` — the dashboard is served at `https://fonzygrok.com/`.
+> - Port 9090 is no longer exposed externally by default — the dashboard is accessed via HTTPS.
 
 Save and exit nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
@@ -313,7 +316,8 @@ command:
 - **Port 443**: HTTPS with auto-provisioned Let's Encrypt certificates
 - **Port 80**: HTTP redirect to HTTPS + ACME HTTP-01 challenge handler
 - **Cert cache**: `/data/certs` (persisted via Docker volume, survives restarts)
-- **Host policy**: accepts `tunnel.fonzygrok.com` and `*.tunnel.fonzygrok.com`
+- **Host policy**: accepts `tunnel.fonzygrok.com`, `*.tunnel.fonzygrok.com`, and `fonzygrok.com` (apex)
+- **Dashboard**: accessible at `https://fonzygrok.com/` (login, registration, token management)
 
 ### Prerequisites
 
@@ -324,6 +328,10 @@ command:
 ```bash
 # Valid HTTPS cert
 curl -v https://tunnel.fonzygrok.com/
+
+# Dashboard loads on apex domain
+curl -v https://fonzygrok.com/
+# Should show the login page HTML
 
 # HTTP redirects to HTTPS
 curl -v http://tunnel.fonzygrok.com/
@@ -407,11 +415,12 @@ Run through these to confirm everything works:
 |:-----|:--------|:---------|
 | DNS resolves | `dig +short tunnel.fonzygrok.com` | Your Elastic IP |
 | Wildcard DNS resolves | `dig +short abc.tunnel.fonzygrok.com` | Your Elastic IP |
-| Server health | `curl http://fonzygrok.com:9090/api/v1/health` | JSON with `"status":"healthy"` |
-| Server info | `curl http://tunnel.fonzygrok.com/` | JSON with `"service":"fonzygrok"` |
-| Tunnel works | `curl http://SUBDOMAIN.tunnel.fonzygrok.com/` | Response from your local service |
-| 404 for bad subdomain | `curl http://nonexistent.tunnel.fonzygrok.com/` | JSON with `"error":"tunnel_not_found"` |
-| Admin tunnels list | `curl http://fonzygrok.com:9090/api/v1/tunnels` | JSON with your active tunnel |
+| Apex DNS resolves | `dig +short fonzygrok.com` | Your Elastic IP |
+| Dashboard (HTTPS) | `curl https://fonzygrok.com/login` | HTML login page |
+| Server info | `curl https://tunnel.fonzygrok.com/` | Redirects to dashboard (login) |
+| Tunnel works | `curl https://SUBDOMAIN.tunnel.fonzygrok.com/` | Response from your local service |
+| 404 for bad subdomain | `curl https://nonexistent.tunnel.fonzygrok.com/` | JSON with `"error":"tunnel_not_found"` |
+| Health check | `docker compose exec fonzygrok-server wget -qO- http://localhost:9090/api/v1/health` | JSON with `"status":"healthy"` |
 
 ---
 

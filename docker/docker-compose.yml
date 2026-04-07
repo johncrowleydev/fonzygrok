@@ -11,12 +11,15 @@ services:
       - "${SSH_PORT:-2222}:2222"
       - "${HTTP_PORT:-8080}:8080"
       - "${HTTPS_PORT:-443}:443"
-      - "${ADMIN_PORT:-9090}:9090"
+      # Port 9090 is optional for external access — dashboard is served on :443
+      # when TLS is enabled. Uncomment for direct admin API access.
+      # - "${ADMIN_PORT:-9090}:9090"
     volumes:
       - fonzygrok-data:/data
       - fonzygrok-certs:/data/certs
     environment:
       - DOMAIN=${DOMAIN:-tunnel.localhost}
+      - APEX_DOMAIN=${APEX_DOMAIN:-}
       - TLS_ENABLED=${TLS_ENABLED:-false}
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: []

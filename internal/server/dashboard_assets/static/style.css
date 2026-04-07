@@ -1,6 +1,6 @@
 /* style.css — Fonzygrok Dashboard
- * Dark theme, slate background, emerald/cyan accents.
- * No external frameworks. REF: SPR-019 T-070
+ * Dark/light theme support with system preference detection.
+ * No external frameworks. REF: SPR-019 T-070, SPR-020 T-070
  */
 
 /* ── Reset ────────────────────────────────────────────────────── */
@@ -10,7 +10,9 @@
     padding: 0;
 }
 
-/* ── Variables ────────────────────────────────────────────────── */
+/* ── Theme Variables ─────────────────────────────────────────── */
+
+/* Default: dark theme (matches original design) */
 :root {
     --bg-primary:   #0f172a;
     --bg-secondary: #1e293b;
@@ -35,6 +37,53 @@
     --sans:         'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --shadow:       0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
     --transition:   150ms ease;
+}
+
+/* Light theme — applied via [data-theme="light"] or prefers-color-scheme */
+[data-theme="light"] {
+    --bg-primary:     #f8fafc;
+    --bg-secondary:   #ffffff;
+    --bg-card:        #ffffff;
+    --bg-input:       #f1f5f9;
+    --bg-hover:       #e2e8f0;
+    --border:         #e2e8f0;
+    --border-focus:   #10b981;
+    --text-primary:   #0f172a;
+    --text-secondary: #475569;
+    --text-muted:     #94a3b8;
+    --shadow:         0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+}
+
+/* Dark theme — explicit override (when user manually selects dark) */
+[data-theme="dark"] {
+    --bg-primary:   #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-card:      #1e293b;
+    --bg-input:     #0f172a;
+    --bg-hover:     #334155;
+    --border:       #334155;
+    --border-focus: #10b981;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted:   #64748b;
+    --shadow:       0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+}
+
+/* System preference: light — only when no explicit data-theme is set */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+        --bg-primary:     #f8fafc;
+        --bg-secondary:   #ffffff;
+        --bg-card:        #ffffff;
+        --bg-input:       #f1f5f9;
+        --bg-hover:       #e2e8f0;
+        --border:         #e2e8f0;
+        --border-focus:   #10b981;
+        --text-primary:   #0f172a;
+        --text-secondary: #475569;
+        --text-muted:     #94a3b8;
+        --shadow:         0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    }
 }
 
 /* ── Base ─────────────────────────────────────────────────────── */
@@ -117,6 +166,29 @@ a:hover { color: var(--accent-hover); }
     margin: 0 auto;
 }
 
+/* ── Theme Toggle Button ─────────────────────────────────────── */
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all var(--transition);
+    line-height: 1;
+}
+.theme-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
 /* ── Cards ────────────────────────────────────────────────────── */
 .card {
     background: var(--bg-card);
@@ -162,7 +234,19 @@ td {
     border-bottom: 1px solid rgba(51, 65, 85, 0.5);
     vertical-align: middle;
 }
+[data-theme="light"] td {
+    border-bottom-color: rgba(226, 232, 240, 0.8);
+}
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) td {
+        border-bottom-color: rgba(226, 232, 240, 0.8);
+    }
+}
 tr:hover td { background: rgba(51, 65, 85, 0.25); }
+[data-theme="light"] tr:hover td { background: rgba(241, 245, 249, 0.8); }
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) tr:hover td { background: rgba(241, 245, 249, 0.8); }
+}
 .mono { font-family: var(--mono); font-size: 0.8rem; }
 
 /* ── Forms ────────────────────────────────────────────────────── */

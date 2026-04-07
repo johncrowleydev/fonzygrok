@@ -23,6 +23,7 @@ type HTTPSection struct {
 	Addr       string `yaml:"addr"`
 	TLS        bool   `yaml:"tls"`
 	TLSCertDir string `yaml:"tls_cert_dir"`
+	ApexDomain string `yaml:"apex_domain"`
 }
 
 // AdminSection holds admin API listener config.

@@ -48,6 +48,7 @@ func serveCmd() *cobra.Command {
 		adminAddr  string
 		dataDir    string
 		domain     string
+		apexDomain string
 		tlsEnabled bool
 		tlsCertDir string
 		configPath string
@@ -73,7 +74,7 @@ func serveCmd() *cobra.Command {
 				DataDir: dataDir,
 				Domain:  domain,
 				SSH:     config.SSHSection{Addr: sshAddr},
-				HTTP:    config.HTTPSection{Addr: httpAddr, TLS: tlsEnabled, TLSCertDir: tlsCertDir},
+				HTTP:    config.HTTPSection{Addr: httpAddr, TLS: tlsEnabled, TLSCertDir: tlsCertDir, ApexDomain: apexDomain},
 				Admin:   config.AdminSection{Addr: adminAddr},
 			}
 			merged := config.MergeServerConfig(fileCfg, flagCfg)
@@ -85,8 +86,9 @@ func serveCmd() *cobra.Command {
 
 			// Translate config.ServerConfig → server.ServerConfig.
 			srvConfig := server.ServerConfig{
-				DataDir: merged.DataDir,
-				Domain:  merged.Domain,
+				DataDir:    merged.DataDir,
+				Domain:     merged.Domain,
+				ApexDomain: merged.HTTP.ApexDomain,
 				SSH: server.SSHConfig{
 					Addr: merged.SSH.Addr,
 				},
@@ -131,6 +133,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&adminAddr, "admin-addr", "127.0.0.1:9090", "Admin API listen address")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory for database and host key")
 	cmd.Flags().StringVar(&domain, "domain", "tunnel.localhost", "Base domain for tunnel routing")
+	cmd.Flags().StringVar(&apexDomain, "apex-domain", "", "Apex domain for dashboard (default: derived from --domain)")
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
 	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file")

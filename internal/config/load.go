@@ -129,6 +129,9 @@ func MergeServerConfig(file *ServerConfig, flags *ServerConfig) *ServerConfig {
 	if flags.HTTP.TLSCertDir != "" {
 		merged.HTTP.TLSCertDir = flags.HTTP.TLSCertDir
 	}
+	if flags.HTTP.ApexDomain != "" {
+		merged.HTTP.ApexDomain = flags.HTTP.ApexDomain
+	}
 	if flags.Admin.Addr != "" {
 		merged.Admin.Addr = flags.Admin.Addr
 	}

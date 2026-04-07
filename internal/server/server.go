@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	"github.com/fonzygrok/fonzygrok/internal/auth"
 	"github.com/fonzygrok/fonzygrok/internal/store"
@@ -19,6 +20,9 @@ type ServerConfig struct {
 	DataDir string
 	// Domain is the base domain for tunnel routing.
 	Domain string
+	// ApexDomain is the apex domain for the dashboard (e.g., "fonzygrok.com").
+	// If empty, derived by stripping the first label from Domain.
+	ApexDomain string
 	// SSH configuration.
 	SSH SSHConfig
 	// Edge (public HTTP) configuration.
@@ -41,8 +45,24 @@ type Server struct {
 	admin   *AdminAPI
 }
 
+// deriveApexDomain strips the first label from a domain to derive the apex.
+// e.g., "tunnel.fonzygrok.com" → "fonzygrok.com".
+// Returns the domain unchanged if it has fewer than 3 labels.
+func deriveApexDomain(domain string) string {
+	parts := strings.SplitN(domain, ".", 2)
+	if len(parts) < 2 || !strings.Contains(parts[1], ".") {
+		return domain
+	}
+	return parts[1]
+}
+
 // NewServer creates and wires all server subsystems. Does not start them.
 func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
+	// Derive apex domain from tunnel domain if not explicitly set.
+	if config.ApexDomain == "" {
+		config.ApexDomain = deriveApexDomain(config.Domain)
+	}
+
 	// Open the database.
 	dbPath := filepath.Join(config.DataDir, "fonzygrok.db")
 	st, err := store.New(dbPath)
@@ -80,6 +100,10 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 	if config.Edge.BaseDomain == "" {
 		config.Edge.BaseDomain = config.Domain
 	}
+	// Propagate apex domain to edge config.
+	if config.Edge.ApexDomain == "" {
+		config.Edge.ApexDomain = config.ApexDomain
+	}
 
 	// Create edge router.
 	edge := NewEdgeRouter(config.Edge, tm, logger)
@@ -92,13 +116,17 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 		if config.TLS.Domain == "" {
 			config.TLS.Domain = config.Domain
 		}
+		// Propagate apex domain to TLS config for cert issuance.
+		if config.TLS.ApexDomain == "" {
+			config.TLS.ApexDomain = config.ApexDomain
+		}
 		tlsMgr := NewTLSManager(config.TLS)
 		edge.SetTLSManager(tlsMgr)
 
 		// Set URL scheme to https for tunnel URLs.
 		tm.SetScheme("https")
 
-		logger.Info("TLS enabled", "cert_dir", config.TLS.CertDir, "domain", config.TLS.Domain)
+		logger.Info("TLS enabled", "cert_dir", config.TLS.CertDir, "domain", config.TLS.Domain, "apex_domain", config.TLS.ApexDomain)
 	}
 
 	// Create JWT manager for dashboard sessions.
@@ -114,7 +142,12 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 
 	// Register dashboard UI on the admin mux.
 	dash := NewDashboard(st, jwtMgr, tm, logger)
+	dash.SetTLSEnabled(config.TLS.Enabled)
 	dash.RegisterRoutes(admin.Mux())
+
+	// Wire admin mux as edge fallback handler — requests to the base domain
+	// or apex domain (no subdomain) are served by the dashboard.
+	edge.SetBaseDomainHandler(admin.Mux())
 
 	return &Server{
 		config:  config,

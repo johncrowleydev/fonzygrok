@@ -538,3 +538,57 @@ func TestHTMXInviteCodeCreate(t *testing.T) {
 		t.Error("response should contain invite code")
 	}
 }
+
+// ── T-070: Theme Toggle Tests ────────────────────────────────────────
+
+func TestLayoutIncludesThemeToggle(t *testing.T) {
+	mux, _, jwt, st := setupDashboardMux(t)
+	cookie := createTestUser(t, st, jwt, "themeuser", "user")
+
+	req := httptest.NewRequest("GET", "/dashboard", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /dashboard status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+
+	if !strings.Contains(html, "theme-toggle") {
+		t.Error("layout should contain theme toggle button (class='theme-toggle')")
+	}
+	if !strings.Contains(html, "toggleTheme") {
+		t.Error("layout should contain toggleTheme function")
+	}
+	if !strings.Contains(html, "fonzygrok-theme") {
+		t.Error("layout should reference localStorage key 'fonzygrok-theme'")
+	}
+}
+
+func TestLayoutFOUCPreventionScript(t *testing.T) {
+	mux, _, jwt, st := setupDashboardMux(t)
+	cookie := createTestUser(t, st, jwt, "foucuser", "user")
+
+	req := httptest.NewRequest("GET", "/dashboard", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+
+	// The FOUC-preventing script must appear in <head> BEFORE the CSS link.
+	cssIdx := strings.Index(html, "style.css")
+	themeIdx := strings.Index(html, "fonzygrok-theme")
+	if cssIdx < 0 || themeIdx < 0 {
+		t.Fatal("layout should contain both style.css and fonzygrok-theme")
+	}
+	if themeIdx > cssIdx {
+		t.Error("FOUC script (fonzygrok-theme) should appear BEFORE style.css link in <head>")
+	}
+}
+

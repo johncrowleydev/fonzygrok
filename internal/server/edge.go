@@ -23,6 +23,9 @@ type EdgeConfig struct {
 	Addr string
 	// BaseDomain is the base domain for subdomain routing (e.g., "tunnel.example.com").
 	BaseDomain string
+	// ApexDomain is the apex domain (e.g., "fonzygrok.com") that should also
+	// be routed to the dashboard when no subdomain is present.
+	ApexDomain string
 	// ProxyTimeout is the maximum time to wait for a proxied response.
 	// Default: 30s.
 	ProxyTimeout time.Duration
@@ -32,12 +35,13 @@ type EdgeConfig struct {
 // by extracting the subdomain from the Host header and proxying the
 // request through an SSH channel. Per CON-002 §3.
 type EdgeRouter struct {
-	config     EdgeConfig
-	tunnels    *TunnelManager
-	logger     *slog.Logger
-	server     *http.Server
-	tlsMgr     *TLSManager
-	redirectSrv *http.Server // HTTP→HTTPS redirect server (when TLS enabled)
+	config           EdgeConfig
+	tunnels          *TunnelManager
+	logger           *slog.Logger
+	server           *http.Server
+	tlsMgr           *TLSManager
+	redirectSrv      *http.Server   // HTTP→HTTPS redirect server (when TLS enabled)
+	baseDomainHandler http.Handler  // fallback handler for apex/base domain (dashboard)
 }
 
 // NewEdgeRouter creates a new HTTP edge router.
@@ -76,6 +80,14 @@ func (e *EdgeRouter) Start(ctx context.Context) error {
 // Must be called before Start().
 func (e *EdgeRouter) SetTLSManager(tm *TLSManager) {
 	e.tlsMgr = tm
+}
+
+// SetBaseDomainHandler sets a fallback handler for requests to the base domain
+// or apex domain (no subdomain). When set, these requests are delegated to the
+// handler instead of returning the default server info JSON.
+// Used to serve the dashboard UI on the public HTTPS port.
+func (e *EdgeRouter) SetBaseDomainHandler(h http.Handler) {
+	e.baseDomainHandler = h
 }
 
 // startPlain starts a plain HTTP listener (existing behavior).
@@ -174,8 +186,12 @@ func (e *EdgeRouter) Handler() http.Handler {
 func (e *EdgeRouter) handleRequest(w http.ResponseWriter, r *http.Request) {
 	tunnelID := e.extractSubdomain(r.Host)
 
-	// No subdomain → server info (CON-002 §3.4).
+	// No subdomain → delegate to fallback handler (dashboard) or server info.
 	if tunnelID == "" {
+		if e.baseDomainHandler != nil {
+			e.baseDomainHandler.ServeHTTP(w, r)
+			return
+		}
 		e.handleServerInfo(w, r)
 		return
 	}
@@ -192,7 +208,7 @@ func (e *EdgeRouter) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 // extractSubdomain extracts the tunnel ID from the Host header.
 // For "abc123.tunnel.example.com" with BaseDomain "tunnel.example.com",
-// returns "abc123". Returns "" for the base domain or unrecognized hosts.
+// returns "abc123". Returns "" for the base domain, apex domain, or unrecognized hosts.
 func (e *EdgeRouter) extractSubdomain(host string) string {
 	// Strip port if present.
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -204,6 +220,11 @@ func (e *EdgeRouter) extractSubdomain(host string) string {
 
 	// Exact match = base domain, no subdomain.
 	if host == base {
+		return ""
+	}
+
+	// Apex domain match (e.g., "fonzygrok.com" when BaseDomain is "tunnel.fonzygrok.com").
+	if apex := strings.ToLower(e.config.ApexDomain); apex != "" && host == apex {
 		return ""
 	}
 

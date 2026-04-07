@@ -53,7 +53,7 @@ func TestTLSConfigCertDir(t *testing.T) {
 }
 
 func TestHostPolicyAcceptsBaseDomain(t *testing.T) {
-	policy := tunnelHostPolicy("tunnel.example.com")
+	policy := tunnelHostPolicy("tunnel.example.com", "")
 
 	if err := policy(context.Background(), "tunnel.example.com"); err != nil {
 		t.Errorf("base domain rejected: %v", err)
@@ -61,7 +61,7 @@ func TestHostPolicyAcceptsBaseDomain(t *testing.T) {
 }
 
 func TestHostPolicyAcceptsSubdomain(t *testing.T) {
-	policy := tunnelHostPolicy("tunnel.example.com")
+	policy := tunnelHostPolicy("tunnel.example.com", "")
 
 	valid := []string{
 		"my-api.tunnel.example.com",
@@ -77,7 +77,7 @@ func TestHostPolicyAcceptsSubdomain(t *testing.T) {
 }
 
 func TestHostPolicyRejectsInvalid(t *testing.T) {
-	policy := tunnelHostPolicy("tunnel.example.com")
+	policy := tunnelHostPolicy("tunnel.example.com", "")
 
 	invalid := []string{
 		"evil.com",
@@ -95,7 +95,7 @@ func TestHostPolicyRejectsInvalid(t *testing.T) {
 }
 
 func TestHostPolicyRejectsMultiLevel(t *testing.T) {
-	policy := tunnelHostPolicy("tunnel.example.com")
+	policy := tunnelHostPolicy("tunnel.example.com", "")
 
 	// Multi-level subdomains should be rejected.
 	multi := []string{
@@ -106,6 +106,40 @@ func TestHostPolicyRejectsMultiLevel(t *testing.T) {
 		if err := policy(context.Background(), host); err == nil {
 			t.Errorf("multi-level host %q should be rejected", host)
 		}
+	}
+}
+
+// T-069: Verify host policy accepts the apex domain when configured.
+func TestHostPolicyAcceptsApexDomain(t *testing.T) {
+	policy := tunnelHostPolicy("tunnel.fonzygrok.com", "fonzygrok.com")
+
+	// Apex domain should be accepted.
+	if err := policy(context.Background(), "fonzygrok.com"); err != nil {
+		t.Errorf("apex domain rejected: %v", err)
+	}
+
+	// Base domain should still work.
+	if err := policy(context.Background(), "tunnel.fonzygrok.com"); err != nil {
+		t.Errorf("base domain rejected: %v", err)
+	}
+
+	// Subdomains should still work.
+	if err := policy(context.Background(), "my-api.tunnel.fonzygrok.com"); err != nil {
+		t.Errorf("subdomain rejected: %v", err)
+	}
+
+	// Other domains should still be rejected.
+	if err := policy(context.Background(), "evil.com"); err == nil {
+		t.Error("evil.com should be rejected")
+	}
+}
+
+// Verify apex domain is not accepted when not configured.
+func TestHostPolicyNoApexWhenEmpty(t *testing.T) {
+	policy := tunnelHostPolicy("tunnel.fonzygrok.com", "")
+
+	if err := policy(context.Background(), "fonzygrok.com"); err == nil {
+		t.Error("fonzygrok.com should be rejected when apex is not set")
 	}
 }
 
