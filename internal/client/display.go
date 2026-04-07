@@ -72,6 +72,20 @@ func (d *Display) TunnelEstablished(name, url string, port int, inspectAddr stri
 	}
 }
 
+// TunnelEstablishedTCP prints the TCP tunnel info block with tcp:// URL format.
+func (d *Display) TunnelEstablishedTCP(name, host string, assignedPort, localPort int, inspectAddr string) {
+	publicURL := fmt.Sprintf("tcp://%s:%d", host, assignedPort)
+	fmt.Fprintf(d.w, "  %s\n", d.green("✔ Tunnel established!"))
+	if name != "" {
+		fmt.Fprintf(d.w, "    ↳ Name:       %s\n", name)
+	}
+	fmt.Fprintf(d.w, "    ↳ Public URL: %s\n", publicURL)
+	fmt.Fprintf(d.w, "    ↳ Forwarding: %s → localhost:%d\n", publicURL, localPort)
+	if inspectAddr != "" {
+		fmt.Fprintf(d.w, "    ↳ Inspector:  http://%s\n", inspectAddr)
+	}
+}
+
 // ConnectionFailed prints a red error message and yellow retry message.
 func (d *Display) ConnectionFailed(err error, attempt int, backoffSec int) {
 	fmt.Fprintf(d.w, "  %s %s\n", d.red("✘"), d.red(fmt.Sprintf("Connection failed: %s", err.Error())))

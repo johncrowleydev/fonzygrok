@@ -16,9 +16,10 @@ import (
 
 // SSH channel type constants per CON-001 §4.1 and §5.1.
 const (
-	ChannelTypeControl = "control"
-	ChannelTypeProxy   = "proxy"
-	SSHUsername         = "fonzygrok"
+	ChannelTypeControl  = "control"
+	ChannelTypeProxy    = "proxy"
+	ChannelTypeTCPProxy = "tcp-proxy"
+	SSHUsername          = "fonzygrok"
 )
 
 // ClientConfig holds the settings required to connect to a fonzygrok server.
@@ -155,6 +156,17 @@ func (c *Connector) SSHClient() *ssh.Client {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.client
+}
+
+// Host returns the hostname portion of the server address (without port).
+// Used to construct tcp:// URLs for TCP tunnel display output.
+func (c *Connector) Host() string {
+	host, _, err := net.SplitHostPort(c.cfg.ServerAddr)
+	if err != nil {
+		// If SplitHostPort fails, the address has no port — return as-is.
+		return c.cfg.ServerAddr
+	}
+	return host
 }
 
 // hostKeyCallback returns the appropriate ssh.HostKeyCallback based on config.

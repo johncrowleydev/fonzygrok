@@ -99,6 +99,9 @@ func MergeClientConfig(file *ClientConfig, flags *ClientConfig) *ClientConfig {
 	if flags.Insecure {
 		merged.Insecure = true
 	}
+	if flags.Protocol != "" {
+		merged.Protocol = flags.Protocol
+	}
 
 	return &merged
 }

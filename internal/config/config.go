@@ -38,4 +38,5 @@ type ClientConfig struct {
 	Port     int    `yaml:"port"`
 	Name     string `yaml:"name"`
 	Insecure bool   `yaml:"insecure"`
+	Protocol string `yaml:"protocol"`
 }
