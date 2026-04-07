@@ -34,7 +34,8 @@ type TunnelAssignment struct {
 	AssignedSubdomain string `json:"assigned_subdomain"`
 	PublicURL         string `json:"public_url"`
 	Protocol          string `json:"protocol"`
-	Name              string `json:"name"` // subdomain name (user-specified or auto-generated)
+	Name              string `json:"name"`                           // subdomain name (user-specified or auto-generated)
+	AssignedPort      int    `json:"assigned_port,omitempty"`        // TCP tunnel port (only set when protocol == "tcp")
 }
 
 // TunnelClose is sent by either side to close a tunnel.
@@ -65,6 +66,7 @@ const (
 	ErrSubdomainInvalid   = "SUBDOMAIN_INVALID"
 	ErrMaxTunnelsExceeded = "MAX_TUNNELS_EXCEEDED"
 	ErrInternalError      = "INTERNAL_ERROR"
+	ErrPortExhausted      = "PORT_EXHAUSTED" // TCP port range fully allocated
 )
 
 // WrapPayload creates a ControlMessage with the given type and payload.
