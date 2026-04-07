@@ -2,7 +2,7 @@
 id: SPR-020
 title: "Sprint 020: Dashboard HTTPS Edge + Light/Dark Theme + TCP Proto"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, dashboard, tls, ui, tcp, v1.2]

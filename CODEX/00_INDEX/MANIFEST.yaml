@@ -265,7 +265,7 @@ documents:
     path: 05_PROJECT/SPR-010_TCP_Tunnels.md
     title: "Sprint 010: TCP Tunneling"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.2, tcp]
     agents: [coder]
     summary: >
@@ -276,7 +276,7 @@ documents:
     path: 05_PROJECT/SPR-011_RateLimit_Dashboard.md
     title: "Sprint 011: Rate Limiting & Web Dashboard"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.2, ratelimit, dashboard]
     agents: [coder]
     summary: >
@@ -287,7 +287,7 @@ documents:
     path: 05_PROJECT/SPR-012_ACL_DashAuth.md
     title: "Sprint 012: IP Whitelisting & Dashboard Auth"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, feature, v1.2, security, acl]
     agents: [coder]
     summary: >
@@ -298,7 +298,7 @@ documents:
     path: 05_PROJECT/SPR-013_v12_Release.md
     title: "Sprint 013: v1.2 Integration & Release"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [project-management, sprint, workflow, integration, v1.2, release]
     agents: [coder]
     summary: >
@@ -376,7 +376,7 @@ documents:
     path: 05_PROJECT/SPR-020_Dashboard_Edge.md
     title: "Sprint 020: Dashboard on HTTPS Edge + Light/Dark Theme"
     type: how-to
-    status: READY
+    status: COMPLETE
     tags: [sprint, dashboard, tls, ui, v1.2]
     agents: [developer-a]
     summary: >

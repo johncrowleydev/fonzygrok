@@ -2,7 +2,7 @@
 id: SPR-013
 title: "Sprint 013: v1.2 Integration & Release"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, integration, v1.2, release]

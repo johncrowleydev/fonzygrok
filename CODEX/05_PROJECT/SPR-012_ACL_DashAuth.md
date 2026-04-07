@@ -2,7 +2,7 @@
 id: SPR-012
 title: "Sprint 012: IP Whitelisting & Dashboard Auth"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.2, security, acl]

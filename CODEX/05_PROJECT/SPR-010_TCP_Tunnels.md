@@ -2,7 +2,7 @@
 id: SPR-010
 title: "Sprint 010: TCP Tunneling"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.2, tcp]

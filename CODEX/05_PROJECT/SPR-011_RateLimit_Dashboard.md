@@ -2,7 +2,7 @@
 id: SPR-011
 title: "Sprint 011: Rate Limiting & Web Dashboard"
 type: how-to
-status: READY
+status: COMPLETE
 owner: architect
 agents: [developer-a, developer-b]
 tags: [sprint, feature, v1.2, ratelimit, dashboard]

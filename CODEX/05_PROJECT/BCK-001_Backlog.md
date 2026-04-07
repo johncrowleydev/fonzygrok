@@ -12,7 +12,7 @@ updated: 2026-04-02
 version: 4.0.0
 ---
 
-> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. All v1.0 and v1.1 items are **complete**. v1.2 auth/dashboard items are complete. Remaining v1.2 items (dashboard HTTPS + theme, TCP tunnels, rate limiting, ACL) are pending.
+> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. **All items are complete.** v1.2.0 ready for tagging.
 
 # Developer Backlog — Fonzygrok
 
@@ -42,9 +42,13 @@ SPR-004A ✅    │
          │
    SPR-017–019 ✅ (user auth, API auth, dashboard → merged to main)
          │
-    SPR-020 ⏳ (dashboard HTTPS edge, light/dark theme → PENDING)
-          │
-   SPR-010–013 ⏳ (TCP, rate limit, ACL, v1.2 release → PENDING)
+   SPR-020 ✅ (dashboard HTTPS edge, light/dark theme)
+         │
+   SPR-010 ✅ (TCP tunneling — server + client)
+         │
+   SPR-011–012 ✅ (rate limiting + IP ACL)
+         │
+   SPR-013 ✅ (integration, E2E, docs → v1.2.0)
 ```
 
 ---
@@ -132,23 +136,23 @@ SPR-004A ✅    │
 
 | # | Item | Sprint | Contract | Owner | Status |
 |:--|:-----|:-------|:---------|:------|:-------|
-| B-058 | Mount dashboard on edge router (HTTPS) | SPR-020 | CON-002 (ext) | Dev A | ⏳ |
-| B-059 | Extend TLS host policy for apex domain | SPR-020 | — | Dev A | ⏳ |
-| B-060 | Light/dark theme toggle (system default) | SPR-020 | — | Dev A | ⏳ |
-| B-061 | Docker + config updates for dashboard edge | SPR-020 | GOV-008 | Dev A | ⏳ |
+| B-058 | Mount dashboard on edge router (HTTPS) | SPR-020 | CON-002 (ext) | Dev A | ✅ |
+| B-059 | Extend TLS host policy for apex domain | SPR-020 | — | Dev A | ✅ |
+| B-060 | Light/dark theme toggle (system default) | SPR-020 | — | Dev A | ✅ |
+| B-061 | Docker + config updates for dashboard edge | SPR-020 | GOV-008 | Dev A | ✅ |
 
 ### v1.2 — TCP, Rate Limiting, ACL (SPR-010 through SPR-013)
 
 | # | Item | Sprint | Contract | Owner | Status |
 |:--|:-----|:-------|:---------|:------|:-------|
-| B-049 | Raw TCP tunnel support | SPR-010 | CON-001 (ext) | Dev A | ⏳ |
-| B-050 | TCP port assignment + listener | SPR-010 | CON-002 (ext) | Dev A | ⏳ |
-| B-051 | Client TCP tunnel mode | SPR-010 | — | Dev B | ⏳ |
-| B-052 | Per-tunnel token bucket rate limiter | SPR-011 | — | Dev A | ⏳ |
-| B-053 | 429 response on rate limit | SPR-011 | CON-002 (ext) | Dev A | ⏳ |
-| B-054 | Per-tunnel IP allow/deny (CIDR) | SPR-012 | — | Dev A | ⏳ |
-| B-055 | v1.2 E2E test suite | SPR-013 | — | Both | ⏳ |
-| B-056 | v1.2 Docker + production deployment | SPR-013 | GOV-008 | Both | ⏳ |
+| B-049 | Raw TCP tunnel support | SPR-010 | CON-001 (ext) | Dev A | ✅ |
+| B-050 | TCP port assignment + listener | SPR-010 | CON-002 (ext) | Dev A | ✅ |
+| B-051 | Client TCP tunnel mode | SPR-010 | — | Dev B | ✅ |
+| B-052 | Per-tunnel token bucket rate limiter | SPR-011 | — | Dev A | ✅ |
+| B-053 | 429 response on rate limit | SPR-011 | CON-002 (ext) | Dev A | ✅ |
+| B-054 | Per-tunnel IP allow/deny (CIDR) | SPR-012 | — | Dev A | ✅ |
+| B-055 | v1.2 E2E test suite | SPR-013 | — | Both | ✅ |
+| B-056 | v1.2 Docker + production deployment | SPR-013 | GOV-008 | Both | ✅ |
 | B-057 | Tag v1.2.0 release | SPR-013 | — | Architect | ⏳ |
 
 ---
@@ -181,3 +185,4 @@ SPR-004A ✅    │
 | 2026-03-31 | 3.0.0 | Added v1.1 backlog items (SPR-006 custom subdomains) | Architect |
 | 2026-04-02 | 4.0.0 | Full reconciliation: marked all completed items, added v1.1/v1.2 items, updated pending | Architect |
 | 2026-04-07 | 5.0.0 | Added SPR-020 dashboard edge + theme items, sequenced before SPR-010 | Architect |
+| 2026-04-07 | 6.0.0 | All v1.2 items complete — SPR-010/011/012/013/020 done. Ready for v1.2.0 tag. | Architect |
