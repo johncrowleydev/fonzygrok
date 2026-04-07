@@ -171,3 +171,42 @@ func TestDisplayColorsWhenEnabled(t *testing.T) {
 		t.Errorf("color output should contain reset ANSI code, got:\n%q", got)
 	}
 }
+
+// TestDisplayTunnelEstablishedTCP verifies the TCP tunnel info block format.
+func TestDisplayTunnelEstablishedTCP(t *testing.T) {
+	var buf bytes.Buffer
+	d := NewDisplayNoColor(&buf)
+	d.TunnelEstablishedTCP("my-db", "fonzygrok.com", 45123, 5432, "localhost:4040")
+
+	got := buf.String()
+	checks := []string{
+		"Tunnel established!",
+		"Name:       my-db",
+		"Public URL: tcp://fonzygrok.com:45123",
+		"Forwarding: tcp://fonzygrok.com:45123 → localhost:5432",
+		"Inspector:  http://localhost:4040",
+	}
+	for _, want := range checks {
+		if !strings.Contains(got, want) {
+			t.Errorf("TunnelEstablishedTCP should contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+// TestDisplayTunnelEstablishedTCPNoName verifies TCP output when name is empty.
+func TestDisplayTunnelEstablishedTCPNoName(t *testing.T) {
+	var buf bytes.Buffer
+	d := NewDisplayNoColor(&buf)
+	d.TunnelEstablishedTCP("", "example.com", 50000, 3306, "")
+
+	got := buf.String()
+	if strings.Contains(got, "Name:") {
+		t.Error("should not show Name when empty")
+	}
+	if strings.Contains(got, "Inspector:") {
+		t.Error("should not show Inspector when empty")
+	}
+	if !strings.Contains(got, "tcp://example.com:50000") {
+		t.Errorf("should contain tcp:// URL, got:\n%s", got)
+	}
+}

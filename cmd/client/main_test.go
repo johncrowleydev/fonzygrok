@@ -317,3 +317,116 @@ func TestRootCmdVerboseFlagParsed(t *testing.T) {
 		t.Fatalf("Execute() error: %v", err)
 	}
 }
+
+// TestRootCmdHelpShowsProtocolFlag verifies --help mentions --protocol.
+func TestRootCmdHelpShowsProtocolFlag(t *testing.T) {
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--protocol") {
+		t.Error("help should mention --protocol flag")
+	}
+}
+
+// TestRootCmdProtocolTCPAccepted verifies that --protocol tcp is accepted.
+func TestRootCmdProtocolTCPAccepted(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "5432",
+		"--protocol", "tcp",
+	})
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		val, err := cmd.Flags().GetString("protocol")
+		if err != nil {
+			t.Fatalf("GetString(\"protocol\") error: %v", err)
+		}
+		if val != "tcp" {
+			t.Errorf("--protocol = %q, want %q", val, "tcp")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}
+
+// TestRootCmdProtocolHTTPAccepted verifies that --protocol http is accepted.
+func TestRootCmdProtocolHTTPAccepted(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+		"--protocol", "http",
+	})
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		val, _ := cmd.Flags().GetString("protocol")
+		if val != "http" {
+			t.Errorf("--protocol = %q, want %q", val, "http")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}
+
+// TestRootCmdProtocolInvalidRejected verifies that --protocol with an invalid
+// value is rejected with a clear error message.
+func TestRootCmdProtocolInvalidRejected(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+		"--protocol", "websocket",
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --protocol websocket")
+	}
+	if !strings.Contains(err.Error(), `"http" or "tcp"`) {
+		t.Errorf("error should mention valid protocol values, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "websocket") {
+		t.Errorf("error should include the invalid value, got: %v", err)
+	}
+}
+
+// TestRootCmdProtocolDefaultsToHTTP verifies that omitting --protocol defaults to "http".
+func TestRootCmdProtocolDefaultsToHTTP(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--server", "localhost:2222",
+		"--token", "fgk_test",
+		"--port", "3000",
+	})
+
+	// The real RunE does config merge + defaulting, but we override to check
+	// that the flag has its zero value (empty string means default to http).
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		val, _ := cmd.Flags().GetString("protocol")
+		if val != "" {
+			t.Errorf("protocol flag default should be empty (defaults later to http), got %q", val)
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+}

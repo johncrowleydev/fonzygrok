@@ -34,6 +34,7 @@ func newRootCmd() *cobra.Command {
 		port       int
 		insecure   bool
 		name       string
+		protocol   string
 		configPath string
 		inspect    string
 		noInspect  bool
@@ -45,12 +46,12 @@ func newRootCmd() *cobra.Command {
 		Short: "Expose local services through public tunnel URLs",
 		Long: `Fonzygrok is a self-hosted ngrok alternative. It connects to a
 fonzygrok server via SSH and creates a public URL that tunnels HTTP
-traffic to a local port on your machine.
+or TCP traffic to a local port on your machine.
 
 Examples:
   fonzygrok --server tunnel.example.com:2222 --token fgk_xxx --port 3000
   fonzygrok --server localhost:2222 --token fgk_xxx --port 8080 --name my-api
-  fonzygrok --server localhost:2222 --token fgk_xxx --port 8080 --insecure
+  fonzygrok --server localhost:2222 --token fgk_xxx --port 5432 --protocol tcp --name my-db
   FONZYGROK_SERVER=tunnel.example.com:2222 FONZYGROK_TOKEN=fgk_xxx fonzygrok --port 3000`,
 		Version: Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,10 +69,16 @@ Examples:
 				Port:     port,
 				Name:     name,
 				Insecure: insecure,
+				Protocol: protocol,
 			}
 			merged := config.MergeClientConfig(fileCfg, flagCfg)
 
-			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name, inspect, noInspect, verbose)
+			// Default protocol to "http" if not set.
+			if merged.Protocol == "" {
+				merged.Protocol = "http"
+			}
+
+			return runTunnel(cmd.Context(), merged.Server, merged.Token, merged.Port, merged.Insecure, merged.Name, merged.Protocol, inspect, noInspect, verbose)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -83,6 +90,7 @@ Examples:
 	cmd.Flags().IntVar(&port, "port", 0, "Local port to expose (required)")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip host key verification")
 	cmd.Flags().StringVar(&name, "name", "", "Custom subdomain name for the tunnel URL")
+	cmd.Flags().StringVar(&protocol, "protocol", "", `Tunnel protocol: "http" (default) or "tcp"`)
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file (auto-detects ~/.fonzygrok.yaml)")
 	cmd.Flags().StringVar(&inspect, "inspect", "localhost:4040", "Inspector web UI listen address")
 	cmd.Flags().BoolVar(&noInspect, "no-inspect", false, "Disable the request inspector")
@@ -102,7 +110,7 @@ Examples:
 }
 
 // runTunnel is the core logic: connect, request tunnel, proxy traffic.
-func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string, inspectAddr string, noInspect bool, verbose bool) error {
+func runTunnel(parent context.Context, serverAddr, token string, port int, insecure bool, name string, protocol string, inspectAddr string, noInspect bool, verbose bool) error {
 	// Resolve env vars for server + token if flags were empty.
 	if serverAddr == "" {
 		serverAddr = os.Getenv("FONZYGROK_SERVER")
@@ -120,6 +128,14 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("--port must be between 1 and 65535")
+	}
+
+	// Validate protocol.
+	switch protocol {
+	case "http", "tcp":
+		// valid
+	default:
+		return fmt.Errorf("--protocol must be \"http\" or \"tcp\", got %q", protocol)
 	}
 
 	// Append default SSH port if not specified.
@@ -179,7 +195,7 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 	// ConnectWithRetry handles the full lifecycle:
 	// connect → open control → request tunnel → proxy → reconnect on failure.
 	err := connector.ConnectWithRetry(ctx, func() error {
-		return onConnect(ctx, connector, port, name, inspector, inspectDisplay, display, logger)
+		return onConnect(ctx, connector, port, name, protocol, inspector, inspectDisplay, display, logger)
 	})
 
 	if err != nil && err != context.Canceled {
@@ -195,7 +211,7 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 // onConnect is called after each successful SSH connection.
 // It opens the control channel, requests a tunnel, and starts the proxy.
-func onConnect(ctx context.Context, connector *client.Connector, port int, name string, inspector *client.Inspector, inspectAddr string, display *client.Display, logger *slog.Logger) error {
+func onConnect(ctx context.Context, connector *client.Connector, port int, name string, protocol string, inspector *client.Inspector, inspectAddr string, display *client.Display, logger *slog.Logger) error {
 	display.Connected()
 
 	// Open control channel.
@@ -204,21 +220,33 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 		return fmt.Errorf("open control channel: %w", err)
 	}
 
-	// Request tunnel.
-	assignment, err := cc.RequestTunnel(port, "http", name)
+	// Request tunnel with the specified protocol.
+	assignment, err := cc.RequestTunnel(port, protocol, name)
 	if err != nil {
 		cc.Close()
 		return fmt.Errorf("request tunnel: %w", err)
 	}
 
 	// Pretty output via Display (to stderr).
-	display.TunnelEstablished(assignment.Name, assignment.PublicURL, port, inspectAddr)
+	// Use TCP display format when protocol is tcp.
+	if protocol == "tcp" {
+		// Extract host from server address for TCP URL display.
+		serverHost := connector.Host()
+		// AssignedPort will be zero until T-068 lands — use 0 as placeholder.
+		// TODO(SPR-020): use assignment.AssignedPort after T-068 is merged.
+		assignedPort := 0
+		_ = assignment // suppress unused lint until AssignedPort field exists
+		display.TunnelEstablishedTCP(assignment.Name, serverHost, assignedPort, port, inspectAddr)
+	} else {
+		display.TunnelEstablished(assignment.Name, assignment.PublicURL, port, inspectAddr)
+	}
 	display.Ready()
 
 	logger.Info("tunnel active",
 		slog.String("tunnel_id", assignment.TunnelID),
 		slog.String("name", assignment.Name),
 		slog.String("public_url", assignment.PublicURL),
+		slog.String("protocol", protocol),
 		slog.Int("local_port", port),
 	)
 
@@ -234,9 +262,10 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 		return fmt.Errorf("SSH client is nil after connect")
 	}
 
-	// HandleChannels blocks until ctx is cancelled or channels close.
-	// Run it in a goroutine so we can detect context cancellation here too.
+	// Register handlers for both HTTP and TCP proxy channels.
+	// HandleChannels dispatches to the correct handler based on channel type.
 	go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeProxy))
+	go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeTCPProxy))
 
 	// Block until context is done (signal or disconnect detected by caller).
 	<-ctx.Done()

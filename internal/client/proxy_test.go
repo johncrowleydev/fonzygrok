@@ -509,3 +509,234 @@ func tcpPipe(t *testing.T) (net.Conn, net.Conn) {
 	return serverConn, clientConn
 }
 
+// TestTCPProxyRoundTrip verifies end-to-end TCP data flow through the tcp-proxy
+// channel: server opens a tcp-proxy channel → proxy dials localhost → bidirectional copy.
+func TestTCPProxyRoundTrip(t *testing.T) {
+	// Start a local TCP server that echoes back data.
+	localLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer localLn.Close()
+
+	go func() {
+		for {
+			conn, err := localLn.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				io.Copy(c, c) // echo
+			}(conn)
+		}
+	}()
+
+	_, portStr, _ := net.SplitHostPort(localLn.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	proxy := NewLocalProxy(localPort, slog.Default())
+
+	serverConn, clientConn := net.Pipe()
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeTCPProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleTCPChannel(mockCh)
+		close(done)
+	}()
+
+	// Write some data through and read it back (echo).
+	testData := "hello TCP tunnel"
+	_, err = serverConn.Write([]byte(testData))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	buf := make([]byte, len(testData))
+	serverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err := io.ReadFull(serverConn, buf)
+	if err != nil {
+		t.Fatalf("read: %v (got %d bytes: %q)", err, n, buf[:n])
+	}
+
+	if string(buf) != testData {
+		t.Errorf("echoed data = %q, want %q", buf, testData)
+	}
+
+	serverConn.Close()
+	<-done
+}
+
+// TestTCPProxyNoHTTP502OnDialFailure verifies that when the local TCP service
+// is unreachable, the tcp-proxy channel is simply closed — no HTTP 502 is written.
+func TestTCPProxyNoHTTP502OnDialFailure(t *testing.T) {
+	// Find a port that's not listening.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, portStr, _ := net.SplitHostPort(listener.Addr().String())
+	var deadPort int
+	fmt.Sscanf(portStr, "%d", &deadPort)
+	listener.Close()
+
+	proxy := NewLocalProxy(deadPort, slog.Default())
+
+	serverConn, clientConn := net.Pipe()
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeTCPProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleTCPChannel(mockCh)
+		close(done)
+	}()
+
+	// Read whatever comes back — should be nothing (channel closed, no HTTP 502).
+	var buf bytes.Buffer
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	io.Copy(&buf, serverConn)
+
+	<-done
+
+	resp := buf.String()
+	if strings.Contains(resp, "502") {
+		t.Errorf("TCP proxy should NOT write HTTP 502, got: %q", resp)
+	}
+	if strings.Contains(resp, "HTTP/") {
+		t.Errorf("TCP proxy should NOT write any HTTP response, got: %q", resp)
+	}
+	if resp != "" {
+		t.Errorf("TCP proxy on dial failure should write nothing, got: %q", resp)
+	}
+}
+
+// TestTCPProxyInspectorRecording verifies that TCP proxy records entries
+// to the inspector with Protocol="tcp" and byte counts.
+func TestTCPProxyInspectorRecording(t *testing.T) {
+	// Start a local TCP echo server.
+	localLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer localLn.Close()
+
+	go func() {
+		conn, err := localLn.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.Copy(conn, conn)
+	}()
+
+	_, portStr, _ := net.SplitHostPort(localLn.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	inspector := NewInspector("127.0.0.1:0", slog.Default())
+	proxy := NewLocalProxy(localPort, slog.Default())
+	proxy.Inspector = inspector
+
+	serverConn, clientConn := net.Pipe()
+	mockCh := &mockNewChannel{
+		chType: ChannelTypeTCPProxy,
+		conn:   clientConn,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		proxy.handleTCPChannel(mockCh)
+		close(done)
+	}()
+
+	testData := "inspector test data"
+	serverConn.Write([]byte(testData))
+
+	// Read echo back.
+	buf := make([]byte, len(testData))
+	serverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	io.ReadFull(serverConn, buf)
+
+	// Close to let handler complete.
+	serverConn.Close()
+	<-done
+
+	entries := inspector.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 inspector entry, got %d", len(entries))
+	}
+	if entries[0].Protocol != "tcp" {
+		t.Errorf("entry Protocol = %q, want %q", entries[0].Protocol, "tcp")
+	}
+	if entries[0].Method != "" {
+		t.Errorf("TCP entry should have empty Method, got %q", entries[0].Method)
+	}
+	if entries[0].RequestSize <= 0 {
+		t.Errorf("TCP entry RequestSize should be > 0, got %d", entries[0].RequestSize)
+	}
+}
+
+// TestHandleChannelsDispatchesTCPProxy verifies that HandleChannels correctly
+// dispatches tcp-proxy channels to handleTCPChannel (not the HTTP handler).
+func TestHandleChannelsDispatchesTCPProxy(t *testing.T) {
+	// Start a local TCP echo server.
+	localLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer localLn.Close()
+
+	go func() {
+		conn, err := localLn.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.Copy(conn, conn)
+	}()
+
+	_, portStr, _ := net.SplitHostPort(localLn.Addr().String())
+	var localPort int
+	fmt.Sscanf(portStr, "%d", &localPort)
+
+	proxy := NewLocalProxy(localPort, slog.Default())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	chChan := make(chan ssh.NewChannel, 1)
+
+	go proxy.HandleChannels(ctx, chChan)
+
+	// Send a tcp-proxy channel.
+	serverConn, clientConn := net.Pipe()
+	chChan <- &mockNewChannel{
+		chType: ChannelTypeTCPProxy,
+		conn:   clientConn,
+	}
+
+	// Write data and read echo.
+	testData := "dispatch test"
+	serverConn.Write([]byte(testData))
+
+	buf := make([]byte, len(testData))
+	serverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err := io.ReadFull(serverConn, buf)
+	if err != nil {
+		t.Fatalf("read: %v (got %d bytes)", err, n)
+	}
+
+	if string(buf) != testData {
+		t.Errorf("echoed = %q, want %q", buf, testData)
+	}
+
+	serverConn.Close()
+	cancel()
+}
