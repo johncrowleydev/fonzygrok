@@ -576,29 +576,36 @@ func TestE2E_8_AdminHealthEndpoint(t *testing.T) {
 	}
 }
 
-// TestE2E_9_ServerInfo verifies the edge root returns server info.
-func TestE2E_9_ServerInfo(t *testing.T) {
+// TestE2E_9_BaseDomainServesDashboard verifies the edge root serves the dashboard.
+// (Changed in SPR-020: base domain now returns dashboard HTML, not JSON server info.)
+func TestE2E_9_BaseDomainServesDashboard(t *testing.T) {
 	env := setupTestEnv(t)
 
 	req, _ := http.NewRequest("GET", "http://"+env.edgeAddr+"/", nil)
 	req.Host = env.domain
 
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	resp, err := (&http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // don't follow redirects
+		},
+	}).Do(req)
 	if err != nil {
-		t.Fatalf("server info: %v", err)
+		t.Fatalf("base domain request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var info struct {
-		Service string `json:"service"`
-	}
-	json.NewDecoder(resp.Body).Decode(&info)
-	if info.Service != "fonzygrok" {
-		t.Errorf("service: got %q, want %q", info.Service, "fonzygrok")
+	// Dashboard may redirect to /login (303) or return HTML (200).
+	// Both are valid — the key assertion is that it's NOT the old JSON server info.
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusSeeOther {
+		// Verify it's not the old JSON response.
+		if strings.Contains(string(body), `"service":"fonzygrok"`) {
+			t.Error("base domain still returning JSON server info — expected dashboard")
+		}
+		t.Logf("Base domain: status=%d (dashboard active)", resp.StatusCode)
+	} else {
+		t.Errorf("expected 200 or 303, got %d, body: %s", resp.StatusCode, string(body))
 	}
 }
 
