@@ -7,7 +7,8 @@ services:
     restart: unless-stopped
     ports:
       - "${SSH_PORT:-2222}:2222"
-      - "${HTTP_PORT:-8080}:8080"
+      - "80:80"              # HTTP→HTTPS redirect server
+      - "8080:8080"          # HTTP edge (non-TLS fallback)
       - "${HTTPS_PORT:-443}:443"
       # TCP tunnel port range — keep narrow to limit attack surface.
       - "${TCP_PORT_RANGE:-40000-40100}:40000-40100"
