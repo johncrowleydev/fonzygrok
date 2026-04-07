@@ -9,7 +9,7 @@ tags: [deployment, docker, production, runbook]
 related: [GOV-008, BLU-001]
 created: 2026-03-31
 updated: 2026-04-07
-version: 3.0.0
+version: 4.0.0
 ---
 
 # Production Deployment: fonzygrok on Ubuntu EC2 + Docker
@@ -156,22 +156,21 @@ Set these values in the `.env` file:
 DOMAIN=tunnel.fonzygrok.com
 APEX_DOMAIN=fonzygrok.com
 SSH_PORT=2222
-HTTP_PORT=80
 HTTPS_PORT=443
-ADMIN_PORT=9090
 TLS_ENABLED=true
 TCP_PORT_RANGE=40000-40100
 RATE_LIMIT=100
-RATE_BURST=20
-FONZYGROK_VERSION=v1.2.0
+RATE_BURST=200
+POSTGRES_USER=fonzygrok
+POSTGRES_PASSWORD=<generate-a-secure-password>
+POSTGRES_DB=fonzygrok
 ```
 
-> **Key changes:**
-> - `HTTP_PORT=80` (not 8080). You want public traffic on port 80 so browsers work without specifying a port.
-> - `APEX_DOMAIN=fonzygrok.com` — the dashboard is served at `https://fonzygrok.com/`.
-> - Port 9090 is no longer exposed externally by default — the dashboard is accessed via HTTPS.
+> **Key settings:**
+> - `POSTGRES_PASSWORD` — change from default. Used internally between containers.
+> - `DATABASE_URL` is auto-constructed from POSTGRES_* vars in docker-compose.yml.
+> - Port 9090 is no longer exposed externally — the dashboard is accessed via HTTPS.
 > - `TCP_PORT_RANGE=40000-40100` — port range for dynamically assigned TCP tunnels.
-> - `RATE_LIMIT=100` / `RATE_BURST=20` — per-tunnel token bucket rate limiter (requests/sec).
 
 Save and exit nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
@@ -183,15 +182,16 @@ docker compose up -d --build
 ```
 
 This will:
-1. Build the Go binaries inside a Docker container
-2. Create a minimal runtime image
-3. Start the server
-4. Create a persistent volume for the database and host key
+1. Pull `postgres:16-alpine` (first run only)
+2. Start PostgreSQL with a persistent named volume (`fonzygrok-pgdata`)
+3. Wait for PG health check to pass
+4. Build the fonzygrok server image from pre-built binaries (Dockerfile.prod)
+5. Run migrations automatically on startup
 
-Wait for it to finish (first build takes 1–2 minutes). Then verify:
+Wait for it to finish. Then verify:
 
 ```bash
-# Check the container is running
+# Check both containers are running and healthy
 docker compose ps
 
 # Check logs
@@ -200,9 +200,8 @@ docker compose logs -f
 
 You should see:
 ```
-ssh server listening  addr=:2222
-edge router listening addr=[::]:8080
-admin API listening   addr=0.0.0.0:9090
+fonzygrok-postgres  Up (healthy)
+fonzygrok-server    Up (healthy)
 ```
 
 Press `Ctrl+C` to stop following logs (the server keeps running).
@@ -644,3 +643,37 @@ docker compose -f ~/fonzygrok/docker/docker-compose.yml exec fonzygrok-server \
 ```bash
 curl http://localhost:9090/api/v1/tunnels
 ```
+
+### Access PostgreSQL directly
+```bash
+docker exec fonzygrok-postgres psql -U fonzygrok -c "SELECT id, username, role FROM users;"
+```
+
+### Backup PostgreSQL
+```bash
+docker exec fonzygrok-postgres pg_dump -U fonzygrok fonzygrok > fonzygrok_backup_$(date +%Y%m%d).sql
+```
+
+### Restore from backup
+```bash
+cat fonzygrok_backup_YYYYMMDD.sql | docker exec -i fonzygrok-postgres psql -U fonzygrok fonzygrok
+```
+
+---
+
+## Post-Deployment Verification Checklist
+
+> **This checklist is MANDATORY after every deployment (per DEF-002 §6).**
+> Deployment is not considered complete until all items pass.
+
+| # | Check | Command | Expected |
+|:--|:------|:--------|:---------|
+| 1 | PG is healthy | `docker ps --format '{{.Names}} {{.Status}}'` | `fonzygrok-postgres Up (healthy)` |
+| 2 | Server is healthy | `docker ps --format '{{.Names}} {{.Status}}'` | `fonzygrok-server Up (healthy)` |
+| 3 | Health endpoint | `docker exec fonzygrok-server wget -qO- http://localhost:9090/api/v1/health` | `{"status":"healthy",...}` |
+| 4 | HTTPS serves | `curl -s -o /dev/null -w '%{http_code}' https://fonzygrok.com/` | `200` |
+| 5 | HTTP redirects | `curl -s -o /dev/null -w '%{http_code}' http://fonzygrok.com/` | `301` |
+| 6 | Login page renders | `curl -s https://fonzygrok.com/login \| grep -c '<form'` | `1` |
+| 7 | Admin can log in | Manual: log in at `https://fonzygrok.com/login` | Dashboard loads |
+| 8 | DB has users | `docker exec fonzygrok-postgres psql -U fonzygrok -c 'SELECT count(*) FROM users;'` | ≥1 |
+

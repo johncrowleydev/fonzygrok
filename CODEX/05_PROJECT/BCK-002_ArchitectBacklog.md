@@ -8,11 +8,11 @@ agents: [architect]
 tags: [project-management, backlog, architect, audit, deployment]
 related: [BCK-001, GOV-007, GOV-008]
 created: 2026-03-31
-updated: 2026-04-02
-version: 2.0.0
+updated: 2026-04-07
+version: 3.0.0
 ---
 
-> **BLUF:** The Architect Agent has its own work stream separate from developer sprints. This backlog tracks: CODEX bootstrapping, sprint audits, infrastructure prep, contract compliance testing, deployment verification, and document maintenance. v1.0/v1.1 items complete. v1.2 items active.
+> **BLUF:** The Architect Agent has its own work stream separate from developer sprints. This backlog tracks: CODEX bootstrapping, sprint audits, infrastructure prep, contract compliance testing, deployment verification, and document maintenance. **All v1.0/v1.1/v1.2 items complete.** Governance cleanup done.
 
 # Architect Agent Backlog — Fonzygrok
 
@@ -60,16 +60,20 @@ version: 2.0.0
 
 ## Active Tasks
 
-| ID | Task | Category | Dependencies | Status |
-|:---|:-----|:---------|:-------------|:-------|
-| A-020 | Apply DEF-002 governance changes (GOV-002, GOV-005, GOV-007) | ARCH-GOV | A-018 | [/] |
-| A-021 | Contract compliance test (CON-001) | ARCH-INTEG | All v1.2 sprints | [ ] |
-| A-022 | Contract compliance test (CON-002 + auth extensions) | ARCH-INTEG | All v1.2 sprints | [ ] |
-| A-023 | E2E integration test (full tunnel round-trip with auth) | ARCH-INTEG | SPR-013 | [ ] |
-| A-024 | Update CON-002 for auth/dashboard routes | ARCH-CODEX | SPR-018/019 | [ ] |
-| A-025 | Create deployment runbooks (RUN-FG-001, 002) | ARCH-INFRA | SPR-013 | [ ] |
-| A-026 | Final CODEX reconciliation (post v1.2) | ARCH-CODEX | All v1.2 sprints | [ ] |
-| A-027 | Tag release v1.2.0 | ARCH-DEPLOY | A-023, Human approval | [ ] |
+No active items. All v1.2 tasks complete.
+
+## Completed Tasks (v1.2)
+
+| ID | Task | Category | Status |
+|:---|:-----|:---------|:-------|
+| A-020 | Apply DEF-002 governance changes (GOV-002, GOV-005, GOV-007) | ARCH-GOV | [x] |
+| A-021 | Contract compliance audit (CON-001 v2.0) — TCP protocol, user auth notes | ARCH-INTEG | [x] |
+| A-022 | Contract compliance audit (CON-002 v2.0) — JWT auth, dashboard routes | ARCH-INTEG | [x] |
+| A-023 | E2E integration verified — 33 store tests + 29 E2E tests pass on PG | ARCH-INTEG | [x] |
+| A-024 | Update CON-002 for auth/dashboard routes (§4.2) | ARCH-CODEX | [x] |
+| A-025 | Update RUN-001 with PG operations + post-deployment verification checklist | ARCH-INFRA | [x] |
+| A-026 | Final CODEX reconciliation (CON-001 v2.0, CON-002 v2.0, RUN-001 v4.0, BCK-001 v7.0) | ARCH-CODEX | [x] |
+| A-027 | Tag release v1.2.0 → commit 7c337d0 | ARCH-DEPLOY | [x] |
 
 ---
 

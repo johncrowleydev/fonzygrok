@@ -8,8 +8,8 @@ agents: [all]
 tags: [standards, specification, api, http, routing]
 related: [BLU-001, CON-001, GOV-004, GOV-008]
 created: 2026-03-31
-updated: 2026-03-31
-version: 1.0.0
+updated: 2026-04-07
+version: 2.0.0
 ---
 
 > **BLUF:** This contract defines HOW the fonzygrok server routes public HTTP requests to tunnels and WHAT the admin REST API looks like. It covers subdomain-based routing, error responses, and all admin endpoints for token and tunnel management.
@@ -48,8 +48,8 @@ version: 1.0.0
 
 | Field | Value |
 |:------|:------|
-| Contract version | `1.0.0` |
-| Stability | `EXPERIMENTAL` |
+| Contract version | `2.0.0` |
+| Stability | `STABLE` |
 | Breaking change policy | MAJOR version bump required for any breaking change |
 | Backward compatibility | Admin API versioned via URL prefix (`/api/v1/`) |
 
@@ -143,7 +143,25 @@ The admin API is NOT exposed to the public internet. It binds to `127.0.0.1:9090
 
 v1.0: No authentication on the admin API (localhost-only access is the security boundary).
 
-v1.1+: Bearer token authentication for remote admin access.
+v1.2+: JWT session authentication. All mutating endpoints require a valid `Authorization: Bearer <jwt>` header or `session` cookie.
+
+**Auth endpoints (on edge router, port 443):**
+
+| Method | Path | Description |
+|:-------|:-----|:------------|
+| `GET` | `/login` | Login page (HTML) |
+| `POST` | `/login` | Authenticate, set session cookie |
+| `GET` | `/register` | Registration page (requires invite code) |
+| `POST` | `/register` | Create account with invite code |
+| `POST` | `/logout` | Clear session cookie |
+| `GET` | `/dashboard` | User dashboard (tokens, tunnels) |
+| `GET` | `/admin/users` | Admin: user management |
+| `GET` | `/admin/invites` | Admin: invite code management |
+| `POST` | `/admin/invites` | Admin: generate new invite code |
+
+**Admin API auth (port 9090):**
+
+All `/api/v1/` endpoints require `Authorization: Bearer <jwt>` except `/api/v1/health`.
 
 ### 4.3 Endpoints
 

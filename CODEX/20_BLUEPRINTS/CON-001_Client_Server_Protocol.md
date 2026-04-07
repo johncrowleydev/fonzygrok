@@ -8,8 +8,8 @@ agents: [all]
 tags: [standards, specification, networking, protocol, ssh]
 related: [BLU-001, GOV-004, GOV-008]
 created: 2026-03-31
-updated: 2026-03-31
-version: 1.0.0
+updated: 2026-04-07
+version: 2.0.0
 ---
 
 > **BLUF:** This contract defines the SSH-based protocol between the fonzygrok client and server. It covers authentication, control messages, tunnel lifecycle, and data channel semantics. All agents building client or server code MUST conform. No deviation without Human approval.
@@ -34,6 +34,7 @@ version: 1.0.0
 - HTTP edge routing (see CON-002)
 - Admin API endpoints (see CON-002)
 - SQLite schema details (see BLU-001)
+- PostgreSQL configuration (see docker-compose.yml)
 - Deployment configuration (see GOV-008)
 
 **Parties:**
@@ -49,8 +50,8 @@ version: 1.0.0
 
 | Field | Value |
 |:------|:------|
-| Contract version | `1.0.0` |
-| Stability | `EXPERIMENTAL` |
+| Contract version | `2.0.0` |
+| Stability | `STABLE` |
 | Breaking change policy | MAJOR version bump required for any breaking change to message formats |
 | Backward compatibility | Server should support N-1 protocol versions when possible |
 
@@ -83,7 +84,9 @@ Server validates token against SQLite store.
   → Invalid: auth failure, connection closed
 ```
 
-**Rationale:** SSH password auth is the simplest mechanism that works with `crypto/ssh`. The username is ignored — identity is determined by the token. SSH key auth may be added in a future version (v1.2+) without breaking this contract.
+**Rationale:** SSH password auth is the simplest mechanism that works with `crypto/ssh`. The username is ignored — identity is determined by the token. User accounts (v1.2+) provide web dashboard login via JWT sessions but do not change SSH authentication.
+
+> **v1.2 note:** Users now own tokens. Token validation also resolves the owning user ID.
 
 ### 3.3 Host Key Verification
 
@@ -132,8 +135,8 @@ All messages on the control channel are **newline-delimited JSON** (one JSON obj
 | Field | Type | Required | Description | Constraints |
 |:------|:-----|:--------:|:------------|:------------|
 | `local_port` | `integer` | ✅ | The port on the client's machine to expose | 1–65535 |
-| `protocol` | `string` | ✅ | Protocol type | `"http"` (v1.0). `"tcp"` reserved for future. |
-| `subdomain` | `string` | ❌ | Requested subdomain (v1.1+). Empty = auto-assign. | `[a-z0-9-]{3,63}` |
+| `protocol` | `string` | ✅ | Protocol type | `"http"` or `"tcp"` |
+| `subdomain` | `string` | ❌ | Requested subdomain (HTTP only). Empty = auto-assign. | `[a-z0-9-]{3,63}` |
 
 #### `TunnelAssignment` (Server → Client)
 

@@ -166,7 +166,7 @@ Deployment is not complete until all verification steps pass.
 1. ~~**Update GOV-002** with Tier 4 smoke tests and production verification protocol~~ ✅ Applied (§18 UAT + §18A Smoke Tests)
 2. ~~**Update GOV-007** with strengthened acceptance criteria and human signoff rule~~ ✅ Applied (§4.2 + §4.3)
 3. ~~**Update GOV-005** with user acceptance gate~~ ✅ Applied (§8.1 deployment process, 2026-04-02)
-4. ~~**Update RUN-001** with post-deployment verification checklist~~ ⏳ Deferred — runbooks not yet created (BCK-002 A-025)
+4. ~~**Update RUN-001** with post-deployment verification checklist~~ ✅ Applied (RUN-001 v4.0, 2026-04-07)
 5. ~~**File DEF-003** for tunnel proxy `unexpected EOF` over internet~~ ✅ Filed and RESOLVED (SPR-015A)
 6. ~~**File DEF-004** for TLS not enabled in production~~ ✅ Filed and RESOLVED (SPR-015A T-048)
 7. ~~**Create SPR-015** for all code fixes (proxy bug, TLS config, smoke tests)~~ ✅ Created and COMPLETE (v1.1.2)
