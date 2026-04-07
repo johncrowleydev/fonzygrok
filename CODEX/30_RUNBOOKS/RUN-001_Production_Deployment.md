@@ -8,8 +8,8 @@ agents: [architect]
 tags: [deployment, docker, production, runbook]
 related: [GOV-008, BLU-001]
 created: 2026-03-31
-updated: 2026-03-31
-version: 2.0.0
+updated: 2026-04-07
+version: 3.0.0
 ---
 
 # Production Deployment: fonzygrok on Ubuntu EC2 + Docker
@@ -48,7 +48,7 @@ In the AWS Console → EC2 → Launch Instance:
 
 ### 1.2 Security Group Rules
 
-You need **4 inbound rules**. This is critical — if you miss one, something won't work.
+You need **5 inbound rules**. This is critical — if you miss one, something won't work.
 
 | Type | Port | Source | Why |
 |:-----|:-----|:-------|:----|
@@ -56,8 +56,11 @@ You need **4 inbound rules**. This is critical — if you miss one, something wo
 | Custom TCP | 2222 | `0.0.0.0/0` | fonzygrok SSH tunnel port (clients connect here) |
 | HTTP | 80 | `0.0.0.0/0` | HTTP redirect + ACME challenge (TLS) or edge traffic |
 | HTTPS | 443 | `0.0.0.0/0` | Public tunnel traffic + dashboard (TLS edge router) |
+| Custom TCP | 40000–40100 | `0.0.0.0/0` | TCP tunnel ports (dynamically assigned per tunnel) |
 
 > ⚠️ **Port 9090 is no longer required for external access.** The dashboard is now served on `:443` via the edge router. The admin API still listens on `127.0.0.1:9090` internally for health checks and direct API access.
+
+> 💡 **TCP tunnel ports** are assigned from the `--tcp-port-range` range. Start with 40000–40100 (101 ports). Expand if you need more concurrent TCP tunnels.
 
 ### 1.3 Allocate an Elastic IP
 
@@ -157,6 +160,9 @@ HTTP_PORT=80
 HTTPS_PORT=443
 ADMIN_PORT=9090
 TLS_ENABLED=true
+TCP_PORT_RANGE=40000-40100
+RATE_LIMIT=100
+RATE_BURST=20
 FONZYGROK_VERSION=v1.2.0
 ```
 
@@ -164,6 +170,8 @@ FONZYGROK_VERSION=v1.2.0
 > - `HTTP_PORT=80` (not 8080). You want public traffic on port 80 so browsers work without specifying a port.
 > - `APEX_DOMAIN=fonzygrok.com` — the dashboard is served at `https://fonzygrok.com/`.
 > - Port 9090 is no longer exposed externally by default — the dashboard is accessed via HTTPS.
+> - `TCP_PORT_RANGE=40000-40100` — port range for dynamically assigned TCP tunnels.
+> - `RATE_LIMIT=100` / `RATE_BURST=20` — per-tunnel token bucket rate limiter (requests/sec).
 
 Save and exit nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
@@ -364,6 +372,148 @@ curl -v http://tunnel.fonzygrok.com/
 - No leading/trailing hyphens
 - Must be unique (first-come, first-served)
 - Released when tunnel disconnects
+
+---
+
+## Phase 8a: TCP Tunnel Setup (v1.2+)
+
+### Server configuration
+
+Add TCP port range flags to the server command:
+
+```yaml
+command:
+  - serve
+  - --data-dir=/data
+  - --tls
+  - --tls-cert-dir=/data/certs
+  - --domain=tunnel.fonzygrok.com
+  - --ssh-addr=:2222
+  - --http-addr=:8080
+  - --admin-addr=0.0.0.0:9090
+  - --tcp-port-range=40000-40100
+```
+
+### Client usage
+
+```bash
+./bin/fonzygrok \
+  --server fonzygrok.com:2222 \
+  --token fgk_XXX \
+  --port 5432 \
+  --protocol tcp
+```
+
+Output:
+```
+  ✔ TCP Tunnel established!
+    ↳ Remote: fonzygrok.com:40003
+    ↳ Forwarding: fonzygrok.com:40003 → localhost:5432
+```
+
+### Security group rules
+
+Ensure your EC2 security group allows inbound TCP on the port range:
+
+```
+Type: Custom TCP
+Port range: 40000-40100
+Source: 0.0.0.0/0
+```
+
+### Docker compose
+
+Expose the TCP port range in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "${SSH_PORT:-2222}:2222"
+  - "${HTTP_PORT:-8080}:8080"
+  - "${HTTPS_PORT:-443}:443"
+  - "40000-40100:40000-40100"     # TCP tunnel ports
+```
+
+---
+
+## Phase 8b: Rate Limiting (v1.2+)
+
+### Configuration
+
+Rate limiting uses a per-tunnel token bucket. Configure via server flags:
+
+| Flag | Default | Description |
+|:-----|:--------|:------------|
+| `--rate-limit` | `0` (disabled) | Requests per second per tunnel |
+| `--rate-burst` | `0` (disabled) | Maximum burst size |
+
+```yaml
+command:
+  - serve
+  - --rate-limit=100
+  - --rate-burst=20
+```
+
+When a client exceeds the rate limit, requests receive **HTTP 429 Too Many Requests** with a `Retry-After: 1` header.
+
+### Custom per-tunnel limits
+
+Use the admin API to set custom limits for specific tunnels:
+
+```bash
+curl -X PATCH http://localhost:9090/api/v1/tunnels/<tunnel_id>/rate-limit \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"rate": 50, "burst": 10}'
+```
+
+---
+
+## Phase 8c: IP Whitelisting (v1.2+)
+
+### Client-side `--allow-ip`
+
+Clients can restrict which source IPs can access their tunnel:
+
+```bash
+./bin/fonzygrok --server fonzygrok.com:2222 --token fgk_XXX --port 3000 \
+  --allow-ip 203.0.113.10 \
+  --allow-ip 10.0.0.0/8
+```
+
+Blocked IPs receive **HTTP 403 Forbidden** with:
+```json
+{"error": "ip_blocked", "message": "Your IP is not allowed to access this tunnel"}
+```
+
+### How it works
+
+- ACL is set per-tunnel during registration
+- Uses the source IP from the TCP connection (NOT `X-Forwarded-For`) to prevent spoofing
+- CIDR notation supported (e.g., `10.0.0.0/8`)
+- No ACL = all IPs allowed (default)
+
+---
+
+## Phase 8d: Dashboard (v1.2+)
+
+### Access
+
+The dashboard is served on the apex domain via the edge router:
+- **Production**: `https://fonzygrok.com/` (no port 9090 needed externally)
+- Login with username/password, registration requires invite code
+
+### Features
+
+- Token management (create, revoke)
+- Live tunnel list with connection status
+- Admin panel (users, invite codes) for admin role
+
+### Theme
+
+The dashboard supports light and dark themes:
+- **Default**: follows system preference via `prefers-color-scheme` media query
+- **Toggle**: click the ◑ button in the nav bar to cycle: system → dark → light → system
+- **Persistence**: theme choice saved to `localStorage` as `fonzygrok-theme`
 
 ---
 

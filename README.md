@@ -46,7 +46,7 @@ chmod +x fonzygrok-linux-amd64
 Output:
 
 ```
-fonzygrok v1.1.0
+fonzygrok v1.2.0
 
   Connecting to fonzygrok.com:2222...
   ✔ Connected!
@@ -187,6 +187,49 @@ fonzygrok --port 3000
 | `--insecure` | `false` | Skip SSH host key verification |
 | `--version` | — | Print version and exit |
 
+### TCP Tunnels
+
+Expose a local TCP service (e.g., database, game server, SSH) via a raw TCP tunnel:
+
+```bash
+fonzygrok --server fonzygrok.com --token fgk_abc123 --port 5432 --protocol tcp
+```
+
+```
+  ✔ TCP Tunnel established!
+    ↳ Remote: fonzygrok.com:40003
+    ↳ Forwarding: fonzygrok.com:40003 → localhost:5432
+```
+
+Anyone can connect to `fonzygrok.com:40003` and the traffic flows to your local port 5432. The server assigns a port from the configured range (default 40000–40100).
+
+### Rate Limiting
+
+The server enforces per-tunnel rate limiting (token bucket). When exceeded, HTTP requests receive **429 Too Many Requests** with a `Retry-After` header. Rate limits are configured server-side via `--rate-limit` and `--rate-burst` flags.
+
+### IP Access Control
+
+Restrict which IPs can access your tunnel:
+
+```bash
+fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000 \
+  --allow-ip 203.0.113.10 \
+  --allow-ip 10.0.0.0/8
+```
+
+Blocked IPs receive **403 Forbidden**. CIDR notation is supported. Without `--allow-ip`, all IPs are allowed.
+
+### Web Dashboard
+
+The server includes a web dashboard at the apex domain (e.g., `https://fonzygrok.com/`):
+
+- Login with username/password
+- Registration with invite codes
+- Create and revoke tunnel tokens
+- View active tunnels in real time
+- Light/dark theme toggle (defaults to system preference)
+- Admin panel for user and invite code management
+
 ---
 
 ## Self-Hosting
@@ -296,20 +339,28 @@ docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --dat
   :2222 ───────────►│  SSH Listener                             │
   (client connects) │    ├── Auth (token validation via SQLite) │
                     │    ├── Control Channel (tunnel register)  │
-                    │    └── Proxy Channels (HTTP relay)        │
+                    │    └── Proxy Channels (HTTP + TCP relay)  │
                     │                                           │
   :443 ────────────►│  HTTP Edge Router                         │
   (public traffic)  │    ├── Subdomain extraction               │
+                    │    ├── Rate limit check                   │
+                    │    ├── IP ACL check                       │
                     │    ├── Tunnel lookup                      │
                     │    └── Proxy via SSH channel               │
                     │                                           │
-  :9090 ───────────►│  Admin API                                │
+  :40000-40100 ────►│  TCP Edge                                 │
+  (TCP tunnels)     │    ├── Port pool allocation               │
+                    │    └── Raw TCP ↔ SSH channel relay        │
+                    │                                           │
+  :9090 ───────────►│  Admin API + Dashboard                    │
   (management)      │    ├── Token CRUD                         │
+                    │    ├── User management                    │
                     │    ├── Tunnel listing                     │
-                    │    └── Health check                       │
+                    │    ├── Health check                       │
+                    │    └── Dashboard UI (served on apex)      │
                     │                                           │
                     │  SQLite Store (/data/fonzygrok.db)        │
-                    │    ├── Tokens                             │
+                    │    ├── Tokens, Users, Invite Codes        │
                     │    └── Connection metadata                │
                     └───────────────────────────────────────────┘
 ```
