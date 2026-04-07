@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/fonzygrok/fonzygrok/internal/auth"
@@ -45,13 +47,14 @@ func serveCmd() *cobra.Command {
 	var (
 		sshAddr    string
 		httpAddr   string
-		adminAddr  string
-		dataDir    string
-		domain     string
-		apexDomain string
-		tlsEnabled bool
-		tlsCertDir string
-		configPath string
+		adminAddr    string
+		dataDir      string
+		domain       string
+		apexDomain   string
+		tlsEnabled   bool
+		tlsCertDir   string
+		configPath   string
+		tcpPortRange string
 	)
 
 	cmd := &cobra.Command{
@@ -69,13 +72,41 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 
+			// Parse TCP port range.
+			var tcpPortMin, tcpPortMax int
+			if tcpPortRange != "" {
+				parts := strings.SplitN(tcpPortRange, "-", 2)
+				if len(parts) != 2 {
+					return fmt.Errorf("invalid --tcp-port-range: expected 'MIN-MAX', got %q", tcpPortRange)
+				}
+				var err error
+				tcpPortMin, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+				if err != nil {
+					return fmt.Errorf("invalid --tcp-port-range min: %w", err)
+				}
+				tcpPortMax, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+				if err != nil {
+					return fmt.Errorf("invalid --tcp-port-range max: %w", err)
+				}
+				if tcpPortMin < 1 || tcpPortMax < tcpPortMin {
+					return fmt.Errorf("invalid --tcp-port-range: min=%d max=%d", tcpPortMin, tcpPortMax)
+				}
+			}
+
 			// Merge: file values as defaults, flags override.
 			flagCfg := &config.ServerConfig{
 				DataDir: dataDir,
 				Domain:  domain,
 				SSH:     config.SSHSection{Addr: sshAddr},
-				HTTP:    config.HTTPSection{Addr: httpAddr, TLS: tlsEnabled, TLSCertDir: tlsCertDir, ApexDomain: apexDomain},
-				Admin:   config.AdminSection{Addr: adminAddr},
+				HTTP: config.HTTPSection{
+					Addr:       httpAddr,
+					TLS:        tlsEnabled,
+					TLSCertDir: tlsCertDir,
+					ApexDomain: apexDomain,
+					TCPPortMin: tcpPortMin,
+					TCPPortMax: tcpPortMax,
+				},
+				Admin: config.AdminSection{Addr: adminAddr},
 			}
 			merged := config.MergeServerConfig(fileCfg, flagCfg)
 
@@ -89,6 +120,8 @@ func serveCmd() *cobra.Command {
 				DataDir:    merged.DataDir,
 				Domain:     merged.Domain,
 				ApexDomain: merged.HTTP.ApexDomain,
+				TCPPortMin: merged.HTTP.TCPPortMin,
+				TCPPortMax: merged.HTTP.TCPPortMax,
 				SSH: server.SSHConfig{
 					Addr: merged.SSH.Addr,
 				},
@@ -136,6 +169,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&apexDomain, "apex-domain", "", "Apex domain for dashboard (default: derived from --domain)")
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
 	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")
+	cmd.Flags().StringVar(&tcpPortRange, "tcp-port-range", "40000-60000", "TCP tunnel port range (MIN-MAX)")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to YAML config file")
 
 	return cmd

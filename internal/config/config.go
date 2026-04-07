@@ -24,6 +24,8 @@ type HTTPSection struct {
 	TLS        bool   `yaml:"tls"`
 	TLSCertDir string `yaml:"tls_cert_dir"`
 	ApexDomain string `yaml:"apex_domain"`
+	TCPPortMin int    `yaml:"tcp_port_min"`
+	TCPPortMax int    `yaml:"tcp_port_max"`
 }
 
 // AdminSection holds admin API listener config.

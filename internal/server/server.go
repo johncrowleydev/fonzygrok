@@ -23,6 +23,10 @@ type ServerConfig struct {
 	// ApexDomain is the apex domain for the dashboard (e.g., "fonzygrok.com").
 	// If empty, derived by stripping the first label from Domain.
 	ApexDomain string
+	// TCPPortMin is the low end of the TCP tunnel port range (inclusive).
+	TCPPortMin int
+	// TCPPortMax is the high end of the TCP tunnel port range (inclusive).
+	TCPPortMax int
 	// SSH configuration.
 	SSH SSHConfig
 	// Edge (public HTTP) configuration.
@@ -43,6 +47,7 @@ type Server struct {
 	tunnels *TunnelManager
 	edge    *EdgeRouter
 	admin   *AdminAPI
+	tcpEdge *TCPEdge
 }
 
 // deriveApexDomain strips the first label from a domain to derive the apex.
@@ -88,6 +93,17 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 
 	// Create tunnel manager.
 	tm := NewTunnelManager(config.Domain, st, logger)
+
+	// Create TCP edge if port range is configured.
+	var tcpEdge *TCPEdge
+	if config.TCPPortMin > 0 && config.TCPPortMax >= config.TCPPortMin {
+		tcpEdge = NewTCPEdge(config.TCPPortMin, config.TCPPortMax, tm, logger)
+		tm.SetTCPEdge(tcpEdge)
+		logger.Info("TCP edge configured",
+			"port_min", config.TCPPortMin,
+			"port_max", config.TCPPortMax,
+		)
+	}
 
 	// Wire SSH session callback → control handler → tunnel manager.
 	sshSrv.OnNewSession(func(sess Session, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
@@ -157,6 +173,7 @@ func NewServer(config ServerConfig, logger *slog.Logger) (*Server, error) {
 		tunnels: tm,
 		edge:    edge,
 		admin:   admin,
+		tcpEdge: tcpEdge,
 	}, nil
 }
 
@@ -192,8 +209,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down all subsystems in order:
 // 1. Stop accepting new connections (admin, edge)
-// 2. Close SSH (disconnects all clients and tunnels)
-// 3. Close store
+// 2. Shut down TCP edge listeners
+// 3. Close SSH (disconnects all clients and tunnels)
+// 4. Close store
 func (s *Server) Stop() error {
 	s.logger.Info("server shutting down")
 
@@ -207,6 +225,11 @@ func (s *Server) Stop() error {
 	// Stop edge router (no new public requests).
 	if err := s.edge.Stop(); err != nil {
 		errs = append(errs, fmt.Errorf("stop edge: %w", err))
+	}
+
+	// Stop TCP edge listeners.
+	if s.tcpEdge != nil {
+		s.tcpEdge.Shutdown()
 	}
 
 	// Stop SSH server (disconnects all clients, cleans up tunnels).

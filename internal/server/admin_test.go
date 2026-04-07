@@ -343,6 +343,51 @@ func TestListTunnels(t *testing.T) {
 	}
 }
 
+func TestListTunnelsTCP(t *testing.T) {
+	admin, tm, st := newTestAdminAPI(t)
+	defer st.Close()
+	token := addTestAuth(t, admin, st)
+
+	// Set up TCP edge.
+	tcpEdge := NewTCPEdge(50400, 50410, tm, testLogger())
+	defer tcpEdge.Shutdown()
+	tm.SetTCPEdge(tcpEdge)
+
+	session := &Session{TokenID: "tok_tcp", RemoteAddr: "127.0.0.1:9999"}
+	tm.Register(session, &proto.TunnelRequest{LocalPort: 5432, Protocol: "tcp"})
+
+	req := authReq(httptest.NewRequest("GET", "/api/v1/tunnels", nil), token)
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Tunnels []struct {
+			TunnelID     string `json:"tunnel_id"`
+			Protocol     string `json:"protocol"`
+			AssignedPort int    `json:"assigned_port"`
+			LocalPort    int    `json:"local_port"`
+		} `json:"tunnels"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp.Tunnels) != 1 {
+		t.Fatalf("expected 1 tunnel, got %d", len(resp.Tunnels))
+	}
+	if resp.Tunnels[0].Protocol != "tcp" {
+		t.Errorf("protocol: got %q, want %q", resp.Tunnels[0].Protocol, "tcp")
+	}
+	if resp.Tunnels[0].AssignedPort < 50400 || resp.Tunnels[0].AssignedPort > 50410 {
+		t.Errorf("assigned_port out of range: got %d", resp.Tunnels[0].AssignedPort)
+	}
+	if resp.Tunnels[0].LocalPort != 5432 {
+		t.Errorf("local_port: got %d, want 5432", resp.Tunnels[0].LocalPort)
+	}
+}
+
 func TestDeleteTunnel(t *testing.T) {
 	admin, tm, st := newTestAdminAPI(t)
 	defer st.Close()

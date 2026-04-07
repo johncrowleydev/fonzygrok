@@ -132,6 +132,12 @@ func MergeServerConfig(file *ServerConfig, flags *ServerConfig) *ServerConfig {
 	if flags.HTTP.ApexDomain != "" {
 		merged.HTTP.ApexDomain = flags.HTTP.ApexDomain
 	}
+	if flags.HTTP.TCPPortMin > 0 {
+		merged.HTTP.TCPPortMin = flags.HTTP.TCPPortMin
+	}
+	if flags.HTTP.TCPPortMax > 0 {
+		merged.HTTP.TCPPortMax = flags.HTTP.TCPPortMax
+	}
 	if flags.Admin.Addr != "" {
 		merged.Admin.Addr = flags.Admin.Addr
 	}

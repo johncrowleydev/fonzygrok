@@ -71,8 +71,10 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	adminAddr := getAvailPort(t)
 
 	config := server.ServerConfig{
-		DataDir: tmpDir,
-		Domain:  opts.Domain,
+		DataDir:    tmpDir,
+		Domain:     opts.Domain,
+		TCPPortMin: 40000,
+		TCPPortMax: 41000,
 		SSH: server.SSHConfig{
 			Addr:        sshAddr,
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -452,15 +454,10 @@ func waitForTunnelGone(t *testing.T, edgeAddr, host string, timeout time.Duratio
 }
 
 // serverSupportsTCP probes whether the server supports TCP tunnels (T-033A).
-// Returns false until the server-side TCP edge is implemented.
+// Returns true now that the server-side TCP edge is implemented.
 func serverSupportsTCP(t *testing.T) bool {
 	t.Helper()
-	// The TCP edge (T-033A) is not yet implemented. When it is, this
-	// function should attempt a TCP tunnel request and check that the
-	// server returns an assigned_port rather than an error.
-	//
-	// For now, we conservatively return false.
-	return false
+	return true
 }
 
 // --- Admin API Helpers ---

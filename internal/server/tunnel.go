@@ -32,10 +32,12 @@ type TunnelEntry struct {
 	Subdomain string
 	// PublicURL is the full public URL for this tunnel.
 	PublicURL string
-	// Protocol is the tunnel protocol (e.g., "http").
+	// Protocol is the tunnel protocol ("http" or "tcp").
 	Protocol string
 	// LocalPort is the port on the client's machine.
 	LocalPort int
+	// AssignedPort is the server-side port for TCP tunnels (0 for HTTP).
+	AssignedPort int
 	// Session is the SSH session that owns this tunnel.
 	Session *Session
 	// CreatedAt is when the tunnel was registered.
@@ -52,11 +54,13 @@ type TunnelManager struct {
 	scheme  string // "http" or "https"
 	store   *store.Store
 	logger  *slog.Logger
+	tcpEdge *TCPEdge // optional: TCP port allocator
 
 	mu        sync.RWMutex
 	tunnels   map[string]*TunnelEntry         // tunnelID → entry
 	byName    map[string]*TunnelEntry         // name/subdomain → entry
 	bySession map[*Session]map[string]bool    // session → set of tunnelIDs
+	byPort    map[int]*TunnelEntry            // assignedPort → entry (TCP only)
 }
 
 // NewTunnelManager creates a new TunnelManager.
@@ -69,6 +73,7 @@ func NewTunnelManager(domain string, st *store.Store, logger *slog.Logger) *Tunn
 		tunnels:   make(map[string]*TunnelEntry),
 		byName:    make(map[string]*TunnelEntry),
 		bySession: make(map[*Session]map[string]bool),
+		byPort:    make(map[int]*TunnelEntry),
 	}
 }
 
@@ -78,12 +83,17 @@ func (tm *TunnelManager) SetScheme(scheme string) {
 	tm.scheme = scheme
 }
 
+// SetTCPEdge sets the TCP edge used for port allocation in TCP tunnels.
+func (tm *TunnelManager) SetTCPEdge(tcpEdge *TCPEdge) {
+	tm.tcpEdge = tcpEdge
+}
+
 // Register creates a new tunnel for the given session and request.
 // If req.Name is provided, it is validated and checked for uniqueness.
 // If req.Name is empty, a human-friendly name is auto-generated.
 // Returns a TunnelAssignment per CON-001 §4.3.
 func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*proto.TunnelAssignment, error) {
-	if req.Protocol != "http" {
+	if req.Protocol != "http" && req.Protocol != "tcp" {
 		return nil, fmt.Errorf("unsupported protocol: %s", req.Protocol)
 	}
 	if req.LocalPort < 1 || req.LocalPort > 65535 {
@@ -127,21 +137,39 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 	subdomain := name
 	publicURL := fmt.Sprintf("%s://%s.%s", tm.scheme, subdomain, tm.domain)
 
+	// For TCP tunnels, assign a port from the TCP edge.
+	var assignedPort int
+	if req.Protocol == "tcp" {
+		if tm.tcpEdge == nil {
+			return nil, fmt.Errorf("TCP tunnels not supported (no TCP edge configured)")
+		}
+		assignedPort, err = tm.tcpEdge.AssignPort()
+		if err != nil {
+			return nil, fmt.Errorf("assign TCP port: %w", err)
+		}
+		// Override public URL for TCP tunnels.
+		publicURL = fmt.Sprintf("tcp://%s:%d", tm.domain, assignedPort)
+	}
+
 	entry := &TunnelEntry{
-		TunnelID:  tunnelID,
-		Name:      name,
-		Subdomain: subdomain,
-		PublicURL: publicURL,
-		Protocol:  req.Protocol,
-		LocalPort: req.LocalPort,
-		Session:   session,
-		CreatedAt: time.Now().UTC(),
-		Metrics:   NewTunnelMetrics(),
+		TunnelID:     tunnelID,
+		Name:         name,
+		Subdomain:    subdomain,
+		PublicURL:    publicURL,
+		Protocol:     req.Protocol,
+		LocalPort:    req.LocalPort,
+		AssignedPort: assignedPort,
+		Session:      session,
+		CreatedAt:    time.Now().UTC(),
+		Metrics:      NewTunnelMetrics(),
 	}
 
 	tm.mu.Lock()
 	tm.tunnels[tunnelID] = entry
 	tm.byName[name] = entry
+	if assignedPort > 0 {
+		tm.byPort[assignedPort] = entry
+	}
 	if tm.bySession[session] == nil {
 		tm.bySession[session] = make(map[string]bool)
 	}
@@ -152,7 +180,9 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 		"tunnel_id", tunnelID,
 		"name", name,
 		"subdomain", subdomain,
+		"protocol", req.Protocol,
 		"local_port", req.LocalPort,
+		"assigned_port", assignedPort,
 		"token_id", session.TokenID,
 	)
 
@@ -162,6 +192,7 @@ func (tm *TunnelManager) Register(session *Session, req *proto.TunnelRequest) (*
 		PublicURL:         publicURL,
 		Protocol:          req.Protocol,
 		Name:              name,
+		AssignedPort:      assignedPort,
 	}, nil
 }
 
@@ -186,12 +217,13 @@ func (tm *TunnelManager) LookupByName(name string) (*TunnelEntry, bool) {
 }
 
 // Deregister removes a tunnel by ID.
+// If the tunnel is a TCP tunnel, its assigned port is released.
 func (tm *TunnelManager) Deregister(tunnelID string) {
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
 
 	entry, ok := tm.tunnels[tunnelID]
 	if !ok {
+		tm.mu.Unlock()
 		return
 	}
 
@@ -200,11 +232,22 @@ func (tm *TunnelManager) Deregister(tunnelID string) {
 	if entry.Name != "" {
 		delete(tm.byName, entry.Name)
 	}
+	// Remove from byPort index.
+	if entry.AssignedPort > 0 {
+		delete(tm.byPort, entry.AssignedPort)
+	}
 	if sessionTunnels, ok := tm.bySession[entry.Session]; ok {
 		delete(sessionTunnels, tunnelID)
 		if len(sessionTunnels) == 0 {
 			delete(tm.bySession, entry.Session)
 		}
+	}
+
+	tm.mu.Unlock()
+
+	// Release TCP port outside the lock to avoid deadlock with TCPEdge.
+	if entry.Protocol == "tcp" && entry.AssignedPort > 0 && tm.tcpEdge != nil {
+		tm.tcpEdge.ReleasePort(entry.AssignedPort)
 	}
 
 	tm.logger.Info("tunnel: deregistered", "tunnel_id", tunnelID, "name", entry.Name)
@@ -214,23 +257,40 @@ func (tm *TunnelManager) Deregister(tunnelID string) {
 // Called on client disconnect to clean up resources.
 func (tm *TunnelManager) DeregisterBySession(session *Session) {
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
 
 	tunnelIDs, ok := tm.bySession[session]
 	if !ok {
+		tm.mu.Unlock()
 		return
 	}
 
+	// Collect entries that need TCP port release.
+	var tcpPorts []int
 	for id := range tunnelIDs {
 		if entry, ok := tm.tunnels[id]; ok {
 			if entry.Name != "" {
 				delete(tm.byName, entry.Name)
+			}
+			if entry.AssignedPort > 0 {
+				delete(tm.byPort, entry.AssignedPort)
+				if entry.Protocol == "tcp" {
+					tcpPorts = append(tcpPorts, entry.AssignedPort)
+				}
 			}
 			delete(tm.tunnels, id)
 		}
 		tm.logger.Info("tunnel: deregistered (session cleanup)", "tunnel_id", id)
 	}
 	delete(tm.bySession, session)
+
+	tm.mu.Unlock()
+
+	// Release TCP ports outside the lock.
+	if tm.tcpEdge != nil {
+		for _, port := range tcpPorts {
+			tm.tcpEdge.ReleasePort(port)
+		}
+	}
 }
 
 // ListActive returns all currently active tunnel entries.

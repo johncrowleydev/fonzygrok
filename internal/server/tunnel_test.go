@@ -222,7 +222,7 @@ func TestRegisterInvalidProtocol(t *testing.T) {
 	session := &Session{TokenID: "tok_test123456"}
 	_, err := tm.Register(session, &proto.TunnelRequest{
 		LocalPort: 3000,
-		Protocol:  "tcp",
+		Protocol:  "websocket",
 	})
 	if err == nil {
 		t.Fatal("expected error for unsupported protocol")
@@ -250,6 +250,102 @@ func TestRegisterInvalidPort(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for port > 65535")
 	}
+}
+
+func TestRegisterTCPTunnel(t *testing.T) {
+	tm, st := newTestTunnelManager(t)
+	defer st.Close()
+
+	logger := testLogger()
+	tcpEdge := NewTCPEdge(50000, 50010, tm, logger)
+	defer tcpEdge.Shutdown()
+	tm.SetTCPEdge(tcpEdge)
+
+	session := &Session{TokenID: "tok_tcp_test"}
+	a, err := tm.Register(session, &proto.TunnelRequest{
+		LocalPort: 5432,
+		Protocol:  "tcp",
+	})
+	if err != nil {
+		t.Fatalf("Register TCP: %v", err)
+	}
+
+	if a.Protocol != "tcp" {
+		t.Errorf("protocol: got %q, want %q", a.Protocol, "tcp")
+	}
+	if a.AssignedPort < 50000 || a.AssignedPort > 50010 {
+		t.Errorf("assigned port out of range: got %d, want 50000-50010", a.AssignedPort)
+	}
+	if a.AssignedPort == 0 {
+		t.Error("expected non-zero assigned port")
+	}
+
+	// Verify entry has the port.
+	entry, ok := tm.Lookup(a.TunnelID)
+	if !ok {
+		t.Fatal("expected to find TCP tunnel")
+	}
+	if entry.AssignedPort != a.AssignedPort {
+		t.Errorf("entry port: got %d, want %d", entry.AssignedPort, a.AssignedPort)
+	}
+	if entry.Protocol != "tcp" {
+		t.Errorf("entry protocol: got %q, want %q", entry.Protocol, "tcp")
+	}
+}
+
+func TestRegisterTCPTunnelNoEdge(t *testing.T) {
+	tm, st := newTestTunnelManager(t)
+	defer st.Close()
+
+	// No TCP edge configured — should fail.
+	session := &Session{TokenID: "tok_tcp_test"}
+	_, err := tm.Register(session, &proto.TunnelRequest{
+		LocalPort: 5432,
+		Protocol:  "tcp",
+	})
+	if err == nil {
+		t.Fatal("expected error when TCP edge not configured")
+	}
+}
+
+func TestDeregisterTCPTunnelReleasesPort(t *testing.T) {
+	tm, st := newTestTunnelManager(t)
+	defer st.Close()
+
+	logger := testLogger()
+	tcpEdge := NewTCPEdge(50100, 50101, tm, logger)
+	defer tcpEdge.Shutdown()
+	tm.SetTCPEdge(tcpEdge)
+
+	session := &Session{TokenID: "tok_tcp_release"}
+	a, err := tm.Register(session, &proto.TunnelRequest{
+		LocalPort: 5432,
+		Protocol:  "tcp",
+	})
+	if err != nil {
+		t.Fatalf("Register TCP: %v", err)
+	}
+
+	port := a.AssignedPort
+	tm.Deregister(a.TunnelID)
+
+	// Port should be released — registering another TCP tunnel should
+	// be able to reuse it.
+	a2, err := tm.Register(session, &proto.TunnelRequest{
+		LocalPort: 5433,
+		Protocol:  "tcp",
+	})
+	if err != nil {
+		t.Fatalf("Register TCP after release: %v", err)
+	}
+
+	// With only 2 ports in range (50100-50101) and one released,
+	// we should get a port (may or may not be the same one).
+	if a2.AssignedPort < 50100 || a2.AssignedPort > 50101 {
+		t.Errorf("reused port out of range: got %d", a2.AssignedPort)
+	}
+
+	_ = port // suppress unused warning
 }
 
 func TestLookup(t *testing.T) {

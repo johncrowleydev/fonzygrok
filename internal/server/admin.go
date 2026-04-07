@@ -342,6 +342,7 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 		ClientIP        string `json:"client_ip"`
 		TokenID         string `json:"token_id"`
 		LocalPort       int    `json:"local_port"`
+		AssignedPort    int    `json:"assigned_port,omitempty"`
 		ConnectedAt     string `json:"connected_at"`
 		BytesIn         int64  `json:"bytes_in"`
 		BytesOut        int64  `json:"bytes_out"`
@@ -352,13 +353,14 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	items := make([]tunnelResp, 0, len(active))
 	for _, entry := range active {
 		item := tunnelResp{
-			TunnelID:    entry.TunnelID,
-			Name:        entry.Name,
-			Subdomain:   entry.Subdomain,
-			PublicURL:   entry.PublicURL,
-			Protocol:    entry.Protocol,
-			LocalPort:   entry.LocalPort,
-			ConnectedAt: entry.CreatedAt.Format(time.RFC3339),
+			TunnelID:     entry.TunnelID,
+			Name:         entry.Name,
+			Subdomain:    entry.Subdomain,
+			PublicURL:    entry.PublicURL,
+			Protocol:     entry.Protocol,
+			LocalPort:    entry.LocalPort,
+			AssignedPort: entry.AssignedPort,
+			ConnectedAt:  entry.CreatedAt.Format(time.RFC3339),
 		}
 		if entry.Session != nil {
 			item.ClientIP = entry.Session.RemoteAddr
