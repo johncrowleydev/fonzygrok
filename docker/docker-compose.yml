@@ -2,9 +2,7 @@ services:
   fonzygrok-server:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        VERSION: "${FONZYGROK_VERSION:-dev}"
+      dockerfile: docker/Dockerfile.prod
     container_name: fonzygrok-server
     restart: unless-stopped
     ports:

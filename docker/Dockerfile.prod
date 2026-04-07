@@ -1,0 +1,37 @@
+# Production Dockerfile — runtime only, no build stage.
+# Binaries are pre-built by GitHub Actions and copied from the host.
+# This keeps the server lightweight (no Go compiler needed on the host).
+FROM alpine:3.19
+
+# Install ca-certificates for TLS.
+RUN apk add --no-cache ca-certificates
+
+# Create non-root user.
+RUN adduser -D -u 10001 fonzygrok
+
+# Copy pre-built binaries from host (placed by CI/CD pipeline).
+COPY bin/fonzygrok-server /usr/local/bin/fonzygrok-server
+COPY bin/fonzygrok-client /usr/local/bin/fonzygrok-client
+
+# Copy entrypoint script.
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Create data and certs directories.
+RUN mkdir -p /data /data/certs && chown -R fonzygrok:fonzygrok /data
+
+# Expose ports:
+#   2222  - SSH (client connections)
+#   8080  - HTTP edge (tunnel proxy)
+#   443   - HTTPS edge (tunnel proxy + dashboard, when TLS enabled)
+#   9090  - Admin API (internal)
+#   40000-40100 - TCP tunnel port range
+EXPOSE 2222 8080 443 9090 40000-40100
+
+# Volumes for persistent data (database, host key, TLS certs).
+VOLUME /data
+
+# Run as non-root.
+USER fonzygrok
+
+ENTRYPOINT ["entrypoint.sh"]
+CMD []

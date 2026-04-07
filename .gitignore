@@ -11,6 +11,7 @@ fonzygrok
 
 # Build output
 dist/
+bin/
 
 # Test binary
 *.test

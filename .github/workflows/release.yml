@@ -71,41 +71,49 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build production binaries
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -o bin/fonzygrok-server ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -o bin/fonzygrok-client ./cmd/client
+          ls -lh bin/
+
       - name: Deploy to production
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          # Write SSH key
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          SSH="ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key"
+          SCP="scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key"
+          TARGET="$DEPLOY_USER@$DEPLOY_HOST"
 
-          # Deploy: clone if needed, pull tag, rebuild, restart
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s << 'DEPLOY_SCRIPT'
-            set -e
+          # Ensure repo exists on server (first-time deploy)
+          $SSH "$TARGET" 'if [ ! -d ~/fonzygrok/.git ]; then mkdir -p ~/fonzygrok && cd ~/fonzygrok && git init && git remote add origin https://github.com/johncrowleydev/fonzygrok.git; fi'
 
-            # First-time deploy: clone repo if it doesn't exist or isn't a git repo
-            if [ ! -d ~/fonzygrok/.git ]; then
-              echo "Initializing git repo..."
-              mkdir -p ~/fonzygrok
-              cd ~/fonzygrok
-              git init
-              git remote add origin https://github.com/johncrowleydev/fonzygrok.git
-            fi
+          # Pull latest code (docker-compose, entrypoint, Dockerfile.prod)
+          $SSH "$TARGET" "cd ~/fonzygrok && git fetch origin --tags && git checkout -f ${{ github.ref_name }}"
 
-            cd ~/fonzygrok
-            git fetch origin --tags
-            git checkout -f ${{ github.ref_name }}
+          # SCP pre-built binaries to server
+          $SSH "$TARGET" "mkdir -p ~/fonzygrok/bin"
+          $SCP bin/fonzygrok-server bin/fonzygrok-client "$TARGET:~/fonzygrok/bin/"
 
-            cd docker
-            docker compose down || true
-            docker compose up -d --build
-            echo "Deploy complete: ${{ github.ref_name }}"
-          DEPLOY_SCRIPT
+          # Rebuild container (Dockerfile.prod just copies binaries into alpine — ~2s)
+          $SSH "$TARGET" "cd ~/fonzygrok/docker && docker compose down || true && docker compose up -d --build"
 
-          # Cleanup
           rm -f ~/.ssh/deploy_key
 
       - name: Post-deploy health check
@@ -115,20 +123,14 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           echo "Waiting for server to start..."
-          sleep 15
-
-          # Write SSH key for health check
+          sleep 10
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
-          # Health check via docker exec (port 9090 is internal-only)
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
             "docker exec fonzygrok-server wget -q --spider http://localhost:9090/api/v1/health" || {
             echo "❌ Health check failed!"
             exit 1
           }
           echo "✅ Health check passed"
-
-          # Cleanup
           rm -f ~/.ssh/deploy_key
