@@ -12,7 +12,7 @@ updated: 2026-04-02
 version: 4.0.0
 ---
 
-> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. All v1.0 and v1.1 items are **complete**. v1.2 auth/dashboard items are complete. Remaining v1.2 items (TCP tunnels, rate limiting, ACL) are pending.
+> **BLUF:** Prioritized developer backlog for fonzygrok covering v1.0 through v1.2. All v1.0 and v1.1 items are **complete**. v1.2 auth/dashboard items are complete. Remaining v1.2 items (dashboard HTTPS + theme, TCP tunnels, rate limiting, ACL) are pending.
 
 # Developer Backlog — Fonzygrok
 
@@ -42,6 +42,8 @@ SPR-004A ✅    │
          │
    SPR-017–019 ✅ (user auth, API auth, dashboard → merged to main)
          │
+    SPR-020 ⏳ (dashboard HTTPS edge, light/dark theme → PENDING)
+          │
    SPR-010–013 ⏳ (TCP, rate limit, ACL, v1.2 release → PENDING)
 ```
 
@@ -126,6 +128,15 @@ SPR-004A ✅    │
 
 ## Pending Items
 
+### v1.2 — Dashboard HTTPS + Theme (SPR-020)
+
+| # | Item | Sprint | Contract | Owner | Status |
+|:--|:-----|:-------|:---------|:------|:-------|
+| B-058 | Mount dashboard on edge router (HTTPS) | SPR-020 | CON-002 (ext) | Dev A | ⏳ |
+| B-059 | Extend TLS host policy for apex domain | SPR-020 | — | Dev A | ⏳ |
+| B-060 | Light/dark theme toggle (system default) | SPR-020 | — | Dev A | ⏳ |
+| B-061 | Docker + config updates for dashboard edge | SPR-020 | GOV-008 | Dev A | ⏳ |
+
 ### v1.2 — TCP, Rate Limiting, ACL (SPR-010 through SPR-013)
 
 | # | Item | Sprint | Contract | Owner | Status |
@@ -169,3 +180,4 @@ SPR-004A ✅    │
 | 2026-03-31 | 2.0.0 | Restructured for parallel execution (Server + Client tracks) | Architect |
 | 2026-03-31 | 3.0.0 | Added v1.1 backlog items (SPR-006 custom subdomains) | Architect |
 | 2026-04-02 | 4.0.0 | Full reconciliation: marked all completed items, added v1.1/v1.2 items, updated pending | Architect |
+| 2026-04-07 | 5.0.0 | Added SPR-020 dashboard edge + theme items, sequenced before SPR-010 | Architect |

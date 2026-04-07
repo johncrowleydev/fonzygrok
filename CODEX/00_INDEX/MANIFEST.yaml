@@ -372,6 +372,18 @@ documents:
       Server-rendered web dashboard: login, registration, token management,
       admin views. Go templates + HTMX, dark theme, embedded assets.
 
+  - id: SPR-020
+    path: 05_PROJECT/SPR-020_Dashboard_Edge.md
+    title: "Sprint 020: Dashboard on HTTPS Edge + Light/Dark Theme"
+    type: how-to
+    status: READY
+    tags: [sprint, dashboard, tls, ui, v1.2]
+    agents: [developer-a]
+    summary: >
+      Mount dashboard on the HTTPS edge router at fonzygrok.com instead of
+      separate port 9090. Add light/dark theme toggle defaulting to system
+      preference. Extend TLS host policy for apex domain.
+
   # ── 50_DEFECTS ──────────────────────────────────────────────────────────────
   - id: DEF-001
     path: 50_DEFECTS/DEF-001_Raw_JSON_Client_Output.md
