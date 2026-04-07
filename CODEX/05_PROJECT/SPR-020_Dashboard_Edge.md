@@ -1,33 +1,40 @@
 ---
 id: SPR-020
-title: "Sprint 020: Dashboard on HTTPS Edge + Light/Dark Theme"
+title: "Sprint 020: Dashboard HTTPS Edge + Light/Dark Theme + TCP Proto"
 type: how-to
 status: READY
 owner: architect
-agents: [developer-a]
-tags: [sprint, dashboard, tls, ui, v1.2]
-related: [CON-002, BLU-001, SPR-019]
+agents: [developer-a, developer-b]
+tags: [sprint, dashboard, tls, ui, tcp, v1.2]
+related: [CON-001, CON-002, BLU-001, SPR-019, SPR-010]
 created: 2026-04-07
 updated: 2026-04-07
-version: 1.0.0
+version: 2.0.0
 ---
 
-# SPR-020: Dashboard on HTTPS Edge + Light/Dark Theme
+# SPR-020: Dashboard HTTPS Edge + Light/Dark Theme + TCP Proto
 
 ## Goal
 
-Serve the admin dashboard and API at `https://fonzygrok.com/` on the existing TLS edge router instead of a separate `:9090` port. Add a light/dark theme toggle that defaults to the user's OS preference.
+Two objectives in one sprint, structured for **parallel execution** by Dev A and Dev B:
+
+1. **Dev A:** Serve the dashboard at `https://fonzygrok.com/` on the edge router, add light/dark theme toggle
+2. **Dev B:** Implement TCP client proxy and CLI support (SPR-010 T-034B), unblocked by T-068 proto changes
+
+T-068 (proto change) is the serial prerequisite — Dev A does it first, commits, then both agents run concurrently.
 
 **Before:**
 - Dashboard at `http://127.0.0.1:9090/` (localhost only, no TLS)
 - Tunnel traffic at `https://*.tunnel.fonzygrok.com/` via edge router
 - `https://fonzygrok.com/` returns a JSON server info blob
+- No TCP tunnel support
 
 **After:**
 - Dashboard at `https://fonzygrok.com/` (public, TLS, auth-protected)
 - Tunnel traffic at `https://*.tunnel.fonzygrok.com/` (unchanged)
 - Port 9090 kept for backward compat / internal healthchecks (unchanged)
 - Dashboard supports light and dark mode with a toggle (defaults to system preference)
+- Proto layer ready for TCP tunnels (Dev B's client work runs in parallel)
 
 ---
 
@@ -35,15 +42,63 @@ Serve the admin dashboard and API at `https://fonzygrok.com/` on the existing TL
 
 | Task | Track | Owner | Depends On |
 |:-----|:------|:------|:-----------|
-| T-069 Dashboard on Edge | Server | Dev A | SPR-019 complete |
+| T-068 TCP Proto Changes | Shared (proto) | Dev A | SPR-019 complete |
+| T-069 Dashboard on Edge | Server | Dev A | T-068 merged |
 | T-070 Light/Dark Theme | Server | Dev A | T-069 |
 | T-071 Docker + Config Updates | Server | Dev A | T-069 |
+| T-034B TCP Client | Client | Dev B | T-068 merged |
 
-All tasks are Dev A (server track). Sequential — T-069 first.
+### Execution Flow
+
+```
+      T-068 (proto — Dev A, serial)
+       /            \
+   T-069, T-070,    T-034B
+   T-071             (Dev B — parallel)
+   (Dev A — parallel)
+```
+
+Dev A commits T-068 proto changes first. Then Dev A continues with T-069–T-071 while Dev B starts T-034B concurrently.
 
 ---
 
 ## Task Details
+
+### T-068: TCP Proto Changes (SERIAL — Dev A first)
+
+This is the prerequisite that unblocks Dev B. Small, targeted change.
+
+#### Modify: `internal/proto/messages.go`
+
+Add `AssignedPort` to `TunnelAssignment`:
+
+```go
+type TunnelAssignment struct {
+    TunnelID     string `json:"tunnel_id"`
+    PublicURL    string `json:"public_url"`
+    Name         string `json:"name"`
+    AssignedPort int    `json:"assigned_port,omitempty"` // NEW: for TCP tunnels
+}
+```
+
+Add error code constant:
+
+```go
+const ErrPortExhausted = "PORT_EXHAUSTED"
+```
+
+#### Tests
+
+- `messages_test.go`: verify `AssignedPort` serializes with `omitempty` (zero value omitted, non-zero included)
+
+#### Acceptance Criteria
+
+- `TunnelAssignment` includes `AssignedPort` field
+- Existing HTTP tunnel assignments (AssignedPort=0) produce identical JSON to before (omitempty)
+- `go build ./...` passes, `go test ./...` passes
+- **Commit immediately after completion so Dev B can pull**
+
+---
 
 ### T-069: Mount Dashboard on Edge Router
 
@@ -252,11 +307,90 @@ Light theme palette suggestion (developer may refine):
 
 ---
 
+### T-034B: TCP Tunnel Client (Dev B — parallel with T-069–T-071)
+
+> **Note:** This is the client-side TCP work originally scoped in SPR-010. It runs here in parallel with Dev A's dashboard work, unblocked by T-068.
+
+#### Modify: `internal/client/proxy.go`
+
+- Add constant: `ChannelTypeTCPProxy = "tcp-proxy"`
+- Modify `HandleChannels()`: accept both `"proxy"` (HTTP) and `"tcp-proxy"` (TCP) channel types
+- Add `handleTCPChannel(newCh ssh.NewChannel)`:
+  - Accept channel
+  - Dial `localhost:<localPort>`
+  - On dial failure: close SSH channel immediately (no HTTP 502 — TCP has no HTTP semantics)
+  - Bidirectional copy using pooled buffers (same as HTTP, minus HTTP parsing)
+  - No inspector recording for TCP (or basic: peer IP, bytes, duration)
+
+#### Modify: `internal/client/connection.go`
+
+- Add `ChannelTypeTCPProxy = "tcp-proxy"` constant (alongside existing `ChannelTypeProxy`)
+
+#### Modify: `internal/client/control.go`
+
+- `RequestTunnel` already sends `protocol` field — no changes needed
+- Parse `AssignedPort` from response — already populated via `TunnelAssignment` struct after T-068
+
+#### Modify: `internal/client/display.go`
+
+- Add `TunnelEstablishedTCP(name, host string, assignedPort, localPort int, inspectAddr string)`:
+  ```
+  ✔ Tunnel established!
+    ↳ Name:       my-db
+    ↳ Public URL: tcp://fonzygrok.com:45123
+    ↳ Forwarding: tcp://fonzygrok.com:45123 → localhost:5432
+    ↳ Inspector:  http://localhost:4040
+  ```
+
+#### Modify: `internal/client/inspector.go`
+
+- Add `Protocol string` field to `RequestEntry` (default `"http"`)
+- TCP entries: record peer IP, bytes transferred, duration (no Method/Path/StatusCode)
+
+#### Modify: `cmd/client/main.go`
+
+- Add `--protocol` flag (default `"http"`, choices: `"http"`, `"tcp"`)
+- Validate: reject unknown protocol values with clear error
+- Pass protocol to `cc.RequestTunnel(port, protocol, name)`
+- Switch display output based on assignment: if `AssignedPort > 0`, use TCP format
+- Register handler for both `"proxy"` and `"tcp-proxy"` channel types:
+  ```go
+  go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeProxy))
+  go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeTCPProxy))
+  ```
+
+#### Modify: `internal/config/config.go`
+
+- Add `Protocol string` to `ClientConfig` (YAML: `protocol`, default `"http"`)
+
+#### Modify: `internal/config/load.go`
+
+- Merge `Protocol` field in client config merge
+
+#### Tests
+
+- `proxy_test.go`: test `tcp-proxy` channel handling, bidirectional copy, local dial failure
+- `main_test.go`: test `--protocol tcp` flag, `--protocol invalid` rejected
+- `display_test.go`: TCP display format output
+
+#### Acceptance Criteria
+
+- `fonzygrok --port 5432 --protocol tcp` → parses and sends protocol in tunnel request
+- `tcp-proxy` SSH channels accepted and proxied to local port
+- On local dial failure: SSH channel closed cleanly (no HTTP 502 written)
+- Inspector shows TCP connections with protocol field
+- Reconnect works: TCP tunnel re-registered on reconnect
+- Invalid `--protocol` value → clear error message
+- `go build ./...` and `go test ./...` pass
+
+---
+
 ## Security Considerations
 
 - Dashboard is now publicly accessible — auth middleware (JWT sessions from SPR-017-019) is the only gatekeeper. Verify all dashboard routes require auth (except `/login`, `/register`).
 - Session cookies MUST have `Secure: true` when TLS is active.
 - The `handleServerInfo` JSON endpoint was unauthenticated and leaked `tunnels_active` count. Moving to dashboard means this info is now behind auth. If a public info endpoint is still desired, it can be a separate route.
+- TCP tunnels expose raw ports. The port range (SPR-010 T-033A server work, future sprint) must be documented.
 
 ---
 
@@ -265,3 +399,4 @@ Light theme palette suggestion (developer may refine):
 - SPR-019 (dashboard) must be complete ✅
 - DNS: `fonzygrok.com` A record must point to the server ✅ (per RUN-001 §Phase 2, already configured)
 - No SSH access to server required — all changes are in Go code + Docker config
+- T-068 proto change must be committed before Dev B starts T-034B
