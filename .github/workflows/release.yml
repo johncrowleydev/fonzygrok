@@ -105,7 +105,7 @@ jobs:
           $SSH "$TARGET" 'if [ ! -d ~/fonzygrok/.git ]; then mkdir -p ~/fonzygrok && cd ~/fonzygrok && git init && git remote add origin https://github.com/johncrowleydev/fonzygrok.git; fi'
 
           # Pull latest code (docker-compose, entrypoint, Dockerfile.prod)
-          $SSH "$TARGET" "cd ~/fonzygrok && git fetch origin --tags && git checkout -f ${{ github.ref_name }}"
+          $SSH "$TARGET" "cd ~/fonzygrok && git fetch origin --tags --force && git checkout -f ${{ github.ref_name }}"
 
           # SCP pre-built binaries to server
           $SSH "$TARGET" "mkdir -p ~/fonzygrok/bin"
