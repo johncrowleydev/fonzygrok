@@ -12,15 +12,8 @@ import (
 
 func newTestTunnelManager(t *testing.T) (*TunnelManager, *store.Store) {
 	t.Helper()
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		st.Close()
-		t.Fatalf("store.Migrate: %v", err)
-	}
-	return NewTunnelManager("tunnel.test.com", st, testLogger()), st
+	st := newTestStore(t)
+	return NewTunnelManager("test.com", st, testLogger()), st
 }
 
 func TestRegister(t *testing.T) {
@@ -69,7 +62,7 @@ func TestRegister(t *testing.T) {
 		t.Errorf("protocol: got %q, want %q", assignment.Protocol, "http")
 	}
 
-	expectedURL := "http://" + assignment.Name + ".tunnel.test.com"
+	expectedURL := "http://" + assignment.Name + ".test.com"
 	if assignment.PublicURL != expectedURL {
 		t.Errorf("public URL: got %q, want %q", assignment.PublicURL, expectedURL)
 	}
@@ -97,8 +90,8 @@ func TestRegisterCustomName(t *testing.T) {
 	if assignment.AssignedSubdomain != "my-api" {
 		t.Errorf("subdomain: got %q, want %q", assignment.AssignedSubdomain, "my-api")
 	}
-	if assignment.PublicURL != "http://my-api.tunnel.test.com" {
-		t.Errorf("public URL: got %q, want %q", assignment.PublicURL, "http://my-api.tunnel.test.com")
+	if assignment.PublicURL != "http://my-api.test.com" {
+		t.Errorf("public URL: got %q, want %q", assignment.PublicURL, "http://my-api.test.com")
 	}
 
 	// Lookup by name should work.

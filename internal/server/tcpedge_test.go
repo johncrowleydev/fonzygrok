@@ -12,15 +12,8 @@ import (
 
 func newTestTCPEdge(t *testing.T, portMin, portMax int) (*TCPEdge, *TunnelManager, *store.Store) {
 	t.Helper()
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		st.Close()
-		t.Fatalf("store.Migrate: %v", err)
-	}
-	tm := NewTunnelManager("tunnel.test.com", st, testLogger())
+	st := newTestStore(t)
+	tm := NewTunnelManager("test.com", st, testLogger())
 	te := NewTCPEdge(portMin, portMax, tm, testLogger())
 	tm.SetTCPEdge(te)
 	return te, tm, st

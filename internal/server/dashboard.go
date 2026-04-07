@@ -119,6 +119,7 @@ func (d *Dashboard) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/login", d.handleLogin)
 	mux.HandleFunc("/register", d.handleRegister)
 	mux.HandleFunc("/logout", d.handleLogout)
+	mux.HandleFunc("/install.sh", handleInstallScript)
 
 	// Authenticated routes.
 	mux.HandleFunc("/dashboard", d.requireAuth(d.handleDashboard))

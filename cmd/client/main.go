@@ -49,10 +49,10 @@ fonzygrok server via SSH and creates a public URL that tunnels HTTP
 or TCP traffic to a local port on your machine.
 
 Examples:
-  fonzygrok --server tunnel.example.com:2222 --token fgk_xxx --port 3000
-  fonzygrok --server localhost:2222 --token fgk_xxx --port 8080 --name my-api
-  fonzygrok --server localhost:2222 --token fgk_xxx --port 5432 --protocol tcp --name my-db
-  FONZYGROK_SERVER=tunnel.example.com:2222 FONZYGROK_TOKEN=fgk_xxx fonzygrok --port 3000`,
+  fonzygrok --port 3000                              # https://<auto>.fonzygrok.com
+  fonzygrok --name my-api --port 8080                 # https://my-api.fonzygrok.com
+  fonzygrok --name my-db --port 5432 --protocol tcp   # tcp://fonzygrok.com:<port>
+  fonzygrok --server self-hosted.dev --port 3000      # custom server`,
 		Version: Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Resolve config file: explicit > ./fonzygrok.yaml > ~/.fonzygrok.yaml
@@ -85,7 +85,7 @@ Examples:
 	}
 
 	// Flags with environment variable fallbacks.
-	cmd.Flags().StringVar(&serverAddr, "server", "", "Server address (host:port) [$FONZYGROK_SERVER]")
+	cmd.Flags().StringVar(&serverAddr, "server", "fonzygrok.com", "Server address (host:port) [$FONZYGROK_SERVER]")
 	cmd.Flags().StringVar(&token, "token", "", "API token for authentication [$FONZYGROK_TOKEN]")
 	cmd.Flags().IntVar(&port, "port", 0, "Local port to expose (required)")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip host key verification")
@@ -119,9 +119,8 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 		token = os.Getenv("FONZYGROK_TOKEN")
 	}
 
-	// Validate required fields.
 	if serverAddr == "" {
-		return fmt.Errorf("--server or FONZYGROK_SERVER is required")
+		serverAddr = "fonzygrok.com"
 	}
 	if token == "" {
 		return fmt.Errorf("--token or FONZYGROK_TOKEN is required")

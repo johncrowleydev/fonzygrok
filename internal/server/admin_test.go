@@ -17,16 +17,10 @@ import (
 
 func newTestAdminAPI(t *testing.T) (*AdminAPI, *TunnelManager, *store.Store) {
 	t.Helper()
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 
 	jwtMgr, _ := auth.NewJWTManager("", 1*time.Hour)
-	tm := NewTunnelManager("tunnel.test.com", st, testLogger())
+	tm := NewTunnelManager("test.com", st, testLogger())
 	admin := NewAdminAPI(AdminConfig{Addr: "127.0.0.1:0"}, st, jwtMgr, tm, nil, testLogger())
 	return admin, tm, st
 }

@@ -18,13 +18,7 @@ import (
 func testDashboard(t *testing.T) (*Dashboard, *auth.JWTManager, *store.Store) {
 	t.Helper()
 
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	t.Cleanup(func() { st.Close() })
 
 	jwtMgr, err := auth.NewJWTManager("", 24*time.Hour)
@@ -32,7 +26,7 @@ func testDashboard(t *testing.T) (*Dashboard, *auth.JWTManager, *store.Store) {
 		t.Fatalf("NewJWTManager: %v", err)
 	}
 
-	tunnels := NewTunnelManager("tunnel.test.com", st, slog.Default())
+	tunnels := NewTunnelManager("test.com", st, slog.Default())
 
 	d := NewDashboard(st, jwtMgr, tunnels, slog.Default())
 	return d, jwtMgr, st

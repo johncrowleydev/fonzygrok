@@ -23,13 +23,7 @@ import (
 
 func newTestEdgeRouter(t *testing.T) (*EdgeRouter, *TunnelManager, *store.Store) {
 	t.Helper()
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	tm := NewTunnelManager("tunnel.example.com", st, logger)
@@ -625,13 +619,7 @@ func assertHasErrorHeaders(t *testing.T, w *httptest.ResponseRecorder) {
 // (e.g., "fonzygrok.com") are routed to the fallback handler (dashboard),
 // not the default server info JSON.
 func TestApexDomainRoutesToFallback(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -672,13 +660,7 @@ func TestApexDomainRoutesToFallback(t *testing.T) {
 // TestBaseDomainRoutesToFallback verifies that the tunnel base domain
 // also routes to the fallback handler when set.
 func TestBaseDomainRoutesToFallback(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -742,13 +724,7 @@ func TestNoFallbackReturnsServerInfo(t *testing.T) {
 // TestSubdomainRoutesToTunnelNotFallback verifies that subdomain requests
 // still route to tunnels, even when a fallback handler is set.
 func TestSubdomainRoutesToTunnelNotFallback(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -825,13 +801,7 @@ func TestExtractSubdomainWithApexDomain(t *testing.T) {
 // --- T-035A: Rate Limiting ---
 
 func TestEdgeRateLimited429(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -897,13 +867,7 @@ func TestEdgeRateLimited429(t *testing.T) {
 // --- T-037A: IP ACL ---
 
 func TestEdgeIPBlocked403(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -946,13 +910,7 @@ func TestEdgeIPBlocked403(t *testing.T) {
 }
 
 func TestEdgeIPAllowed(t *testing.T) {
-	st, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	st := newTestStore(t)
 	defer st.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

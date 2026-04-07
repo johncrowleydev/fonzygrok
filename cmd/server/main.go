@@ -180,7 +180,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&adminAddr, "admin-addr", "127.0.0.1:9090", "Admin API listen address")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Data directory for host key and certs")
 	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL connection string (default: $DATABASE_URL)")
-	cmd.Flags().StringVar(&domain, "domain", "tunnel.localhost", "Base domain for tunnel routing")
+	cmd.Flags().StringVar(&domain, "domain", "localhost", "Base domain for tunnel routing")
 	cmd.Flags().StringVar(&apexDomain, "apex-domain", "", "Apex domain for dashboard (default: derived from --domain)")
 	cmd.Flags().BoolVar(&tlsEnabled, "tls", false, "Enable auto-TLS via Let's Encrypt")
 	cmd.Flags().StringVar(&tlsCertDir, "tls-cert-dir", "", "Directory for TLS certificate cache (default: <data-dir>/certs)")

@@ -17,18 +17,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// newTestStoreAndToken creates an in-memory store with a token, returns
+// newTestStoreAndToken creates a PG test store with a token, returns
 // the store, token ID, and raw token.
 func newTestStoreAndToken(t *testing.T) (*store.Store, string, string) {
 	t.Helper()
-	s, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	if err := s.Migrate(); err != nil {
-		s.Close()
-		t.Fatalf("store.Migrate: %v", err)
-	}
+	s := newTestStore(t)
 	tok, raw, err := s.CreateToken("test-token")
 	if err != nil {
 		s.Close()
@@ -481,7 +474,7 @@ func startTestServerWithTunnels(t *testing.T) (*SSHServer, *TunnelManager, *stor
 	st, _, rawToken := newTestStoreAndToken(t)
 	srv, addr := startTestSSHServer(t, st)
 
-	tm := NewTunnelManager("tunnel.test.com", st, testLogger())
+	tm := NewTunnelManager("test.com", st, testLogger())
 
 	srv.OnNewSession(func(sess Session, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
 		ch := NewControlHandler(&sess, tm, testLogger())
