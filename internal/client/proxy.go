@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	cryptotls "crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
@@ -44,6 +45,38 @@ type LocalProxy struct {
 	localPort int
 	logger    *slog.Logger
 	Inspector *Inspector
+}
+
+// localDial connects to a local address and auto-detects whether the
+// service speaks TLS. If TLS handshake succeeds (with InsecureSkipVerify
+// for local dev certs), returns a TLS-wrapped connection. Otherwise
+// returns the plain TCP connection.
+func localDial(addr string, logger *slog.Logger) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	// Try TLS handshake with a short deadline.
+	tlsConn := cryptotls.Client(conn, &cryptotls.Config{
+		InsecureSkipVerify: true,
+	})
+	tlsConn.SetDeadline(time.Now().Add(500 * time.Millisecond))
+	if err := tlsConn.Handshake(); err != nil {
+		// Not TLS — reset deadline and return the raw conn.
+		// We need a new connection since the failed handshake consumed bytes.
+		conn.Close()
+		conn2, err2 := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err2 != nil {
+			return nil, err2
+		}
+		logger.Debug("proxy: local service is plain HTTP", slog.String("addr", addr))
+		return conn2, nil
+	}
+	// Clear deadline for normal operation.
+	tlsConn.SetDeadline(time.Time{})
+	logger.Debug("proxy: local service is HTTPS (TLS)", slog.String("addr", addr))
+	return tlsConn, nil
 }
 
 // NewLocalProxy creates a new LocalProxy that dials the given local port.
@@ -101,7 +134,7 @@ func (lp *LocalProxy) handleSingleChannel(newCh ssh.NewChannel) {
 	start := time.Now()
 
 	localAddr := fmt.Sprintf("127.0.0.1:%d", lp.localPort)
-	localConn, err := net.Dial("tcp", localAddr)
+	localConn, err := localDial(localAddr, lp.logger)
 	if err != nil {
 		lp.logger.Warn("proxy: local service unreachable, sending 502",
 			slog.String("addr", localAddr),
@@ -176,7 +209,7 @@ func (lp *LocalProxy) handleTCPChannel(newCh ssh.NewChannel) {
 	start := time.Now()
 
 	localAddr := fmt.Sprintf("127.0.0.1:%d", lp.localPort)
-	localConn, err := net.Dial("tcp", localAddr)
+	localConn, err := localDial(localAddr, lp.logger)
 	if err != nil {
 		lp.logger.Warn("proxy: local TCP service unreachable, closing channel",
 			slog.String("addr", localAddr),
