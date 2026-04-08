@@ -87,6 +87,7 @@ func TestClose(t *testing.T) {
 
 // newTestStore creates a test store with a clean database.
 // It drops all tables before migrating to ensure test isolation.
+// Uses an advisory lock to prevent cross-package migration races.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	s, err := New(testDatabaseURL(t))
@@ -94,18 +95,27 @@ func newTestStore(t *testing.T) *Store {
 		t.Fatalf("New: %v", err)
 	}
 
+	// Acquire advisory lock to prevent cross-package migration races.
+	// Lock ID 42 is arbitrary but must match across all test helpers.
+	s.db.Exec("SELECT pg_advisory_lock(42)")
+
 	// Clean slate: drop all tables for test isolation.
 	tables := []string{"invite_codes", "connection_log", "tunnels", "tokens", "users"}
 	for _, table := range tables {
 		_, err := s.db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table))
 		if err != nil {
+			s.db.Exec("SELECT pg_advisory_unlock(42)")
 			t.Fatalf("drop table %s: %v", table, err)
 		}
 	}
 
 	if err := s.Migrate(); err != nil {
+		s.db.Exec("SELECT pg_advisory_unlock(42)")
 		s.Close()
 		t.Fatalf("Migrate: %v", err)
 	}
+
+	// Release the lock after setup completes.
+	s.db.Exec("SELECT pg_advisory_unlock(42)")
 	return s
 }

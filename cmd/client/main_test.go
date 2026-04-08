@@ -78,8 +78,9 @@ func TestRootCmdInvalidPort(t *testing.T) {
 	}
 }
 
-// TestRootCmdMissingServer verifies that missing --server (and no env var) errors.
-func TestRootCmdMissingServer(t *testing.T) {
+// TestRootCmdDefaultServer verifies that when --server is not provided and
+// FONZYGROK_SERVER is empty, the default "fonzygrok.com" is used (no error).
+func TestRootCmdDefaultServer(t *testing.T) {
 	// Ensure env vars are not set.
 	t.Setenv("FONZYGROK_SERVER", "")
 	t.Setenv("FONZYGROK_TOKEN", "tok")
@@ -87,9 +88,17 @@ func TestRootCmdMissingServer(t *testing.T) {
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--port", "3000", "--token", "fgk_test"})
 
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for missing --server")
+	// Override RunE to capture the server value without connecting.
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		server, _ := cmd.Flags().GetString("server")
+		if server != "fonzygrok.com" {
+			t.Errorf("server default = %q, want %q", server, "fonzygrok.com")
+		}
+		return nil
+	}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
 	}
 }
 

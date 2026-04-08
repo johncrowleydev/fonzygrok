@@ -70,23 +70,27 @@ func TestProxyRoundTrip(t *testing.T) {
 	}
 
 	// Run the proxy handler in a goroutine.
-	go proxy.handleSingleChannel(mockCh)
+	done := make(chan struct{})
+	go func() {
+		proxy.handleSingleChannel(mockCh)
+		close(done)
+	}()
 
 	// From the "server" side, write an HTTP request.
-	httpReq := "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	httpReq := "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
 	_, err := serverConn.Write([]byte(httpReq))
 	if err != nil {
 		t.Fatalf("write request: %v", err)
 	}
-	// Close the write side to signal end of request.
-	if tc, ok := serverConn.(*net.TCPConn); ok {
-		tc.CloseWrite()
-	}
-	// For net.Pipe, we close after a short wait to let proxy read.
-	// Read the response.
+
+	// Read the response with a deadline.
 	var buf bytes.Buffer
 	serverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	io.Copy(&buf, serverConn)
+
+	// Close to terminate proxy goroutines.
+	serverConn.Close()
+	<-done
 
 	resp := buf.String()
 	if !strings.Contains(resp, "hello from local") {
@@ -168,14 +172,22 @@ func TestProxyConcurrentChannels(t *testing.T) {
 				conn:   clientConn,
 			}
 
-			go proxy.handleSingleChannel(mockCh)
+			proxyDone := make(chan struct{})
+			go func() {
+				proxy.handleSingleChannel(mockCh)
+				close(proxyDone)
+			}()
 
-			httpReq := fmt.Sprintf("GET /%d HTTP/1.1\r\nHost: localhost\r\n\r\n", idx)
+			httpReq := fmt.Sprintf("GET /%d HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", idx)
 			serverConn.Write([]byte(httpReq))
 
 			var buf bytes.Buffer
 			serverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			io.Copy(&buf, serverConn)
+
+			// Close to let proxy goroutines terminate.
+			serverConn.Close()
+			<-proxyDone
 
 			resp := buf.String()
 			if !strings.Contains(resp, "concurrent ok") {
@@ -519,6 +531,7 @@ func TestTCPProxyRoundTrip(t *testing.T) {
 	}
 	defer localLn.Close()
 
+	// Accept in a loop — localDial's TLS auto-detect consumes the first connection.
 	go func() {
 		for {
 			conn, err := localLn.Accept()
@@ -527,7 +540,7 @@ func TestTCPProxyRoundTrip(t *testing.T) {
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				io.Copy(c, c) // echo
+				io.Copy(c, c)
 			}(conn)
 		}
 	}()
@@ -622,6 +635,7 @@ func TestTCPProxyNoHTTP502OnDialFailure(t *testing.T) {
 // to the inspector with Protocol="tcp" and byte counts.
 func TestTCPProxyInspectorRecording(t *testing.T) {
 	// Start a local TCP echo server.
+	// Accept in a loop — localDial's TLS auto-detect consumes the first connection.
 	localLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -629,12 +643,16 @@ func TestTCPProxyInspectorRecording(t *testing.T) {
 	defer localLn.Close()
 
 	go func() {
-		conn, err := localLn.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := localLn.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				io.Copy(c, c)
+			}(conn)
 		}
-		defer conn.Close()
-		io.Copy(conn, conn)
 	}()
 
 	_, portStr, _ := net.SplitHostPort(localLn.Addr().String())
@@ -688,6 +706,7 @@ func TestTCPProxyInspectorRecording(t *testing.T) {
 // dispatches tcp-proxy channels to handleTCPChannel (not the HTTP handler).
 func TestHandleChannelsDispatchesTCPProxy(t *testing.T) {
 	// Start a local TCP echo server.
+	// Accept in a loop — localDial's TLS auto-detect consumes the first connection.
 	localLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -695,12 +714,16 @@ func TestHandleChannelsDispatchesTCPProxy(t *testing.T) {
 	defer localLn.Close()
 
 	go func() {
-		conn, err := localLn.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := localLn.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				io.Copy(c, c)
+			}(conn)
 		}
-		defer conn.Close()
-		io.Copy(conn, conn)
 	}()
 
 	_, portStr, _ := net.SplitHostPort(localLn.Addr().String())
