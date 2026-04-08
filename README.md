@@ -13,9 +13,9 @@ Unlike managed services, you control the entire stack. Run the server on your ow
                          │          Your Server (VPS)          │
    Internet              │                                     │
    ────────────►  :443   │  HTTP Edge ──► Tunnel Manager       │
-   browser hits           │       │              │              │
-   my-app.tunnel.         │       ▼              ▼              │
-   yourdomain.com        │  Route by     SSH Channel ◄──────── │ :2222
+   browser hits          │       │              │              │
+   my-app.               │       ▼              ▼              │
+   fonzygrok.com         │  Route by     SSH Channel ◄──────── │ :2222
                          │  subdomain         │                │
                          └────────────────────│────────────────┘
                                               │  SSH tunnel
@@ -33,40 +33,59 @@ Unlike managed services, you control the entire stack. Run the server on your ow
 ## Quick Start
 
 ```bash
-# 1. Download the client
-curl -LO https://github.com/johncrowleydev/fonzygrok/releases/latest/download/fonzygrok-linux-amd64
-chmod +x fonzygrok-linux-amd64
+# Install (Linux / macOS)
+curl -sSfL https://fonzygrok.com/install.sh | sh
 
-# 2. Get a token from your server admin
+# Install (Windows PowerShell)
+irm https://fonzygrok.com/install.ps1 | iex
+```
 
-# 3. Connect
-./fonzygrok-linux-amd64 --server fonzygrok.com --token fgk_your_token --port 3000
+Then connect:
+
+```bash
+fonzygrok --name my-app --port 3000 --token fgk_your_token
 ```
 
 Output:
 
 ```
-fonzygrok v1.2.0
+fonzygrok v1.3.0
 
   Connecting to fonzygrok.com:2222...
   ✔ Connected!
 
   ✔ Tunnel established!
-    ↳ Name:       laughing-panda
-    ↳ Public URL: https://laughing-panda.tunnel.fonzygrok.com
-    ↳ Forwarding: https://laughing-panda.tunnel.fonzygrok.com → localhost:3000
+    ↳ Name:       my-app
+    ↳ Public URL: https://my-app.fonzygrok.com
+    ↳ Forwarding: https://my-app.fonzygrok.com → localhost:3000
     ↳ Inspector:  http://localhost:4040
 
   Press Ctrl+C to stop.
 ```
 
-Your local service on port 3000 is now accessible at the public URL.
+Your local service on port 3000 is now accessible at the public URL. Works with both HTTP and HTTPS local services — auto-detected, no flags needed.
 
 ---
 
 ## Installation
 
-### Download Binary (Recommended)
+### Install Script (Recommended)
+
+**Linux / macOS:**
+
+```bash
+curl -sSfL https://fonzygrok.com/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://fonzygrok.com/install.ps1 | iex
+```
+
+Both scripts download the binary, install it to a directory on your PATH, and you're ready to go. Restart your terminal after installing.
+
+### Download Binary
 
 Download the latest release for your platform:
 
@@ -102,27 +121,37 @@ go build -o fonzygrok-server ./cmd/server/
 ### Connecting
 
 ```bash
-fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000
+fonzygrok --port 3000 --token fgk_abc123
 ```
 
-The `--server` flag accepts a domain or `host:port`. If no port is specified, `:2222` is appended automatically.
+The server defaults to `fonzygrok.com`. Use `--server` to connect to a different instance:
+
+```bash
+fonzygrok --server self-hosted.dev --token fgk_abc123 --port 3000
+```
+
+If no port is specified in `--server`, `:2222` is appended automatically.
 
 ### Custom Subdomains
 
 Use `--name` to request a specific subdomain:
 
 ```bash
-fonzygrok --server fonzygrok.com --token fgk_abc123 --port 8080 --name my-api
+fonzygrok --name my-api --port 8080
 ```
 
 ```
   ✔ Tunnel established!
     ↳ Name:       my-api
-    ↳ Public URL: https://my-api.tunnel.fonzygrok.com
-    ↳ Forwarding: https://my-api.tunnel.fonzygrok.com → localhost:8080
+    ↳ Public URL: https://my-api.fonzygrok.com
+    ↳ Forwarding: https://my-api.fonzygrok.com → localhost:8080
 ```
 
 If the name is already taken, the server assigns a random name instead.
+
+### HTTPS Local Services
+
+The client auto-detects whether your local service speaks HTTP or HTTPS. If your app runs with a self-signed dev cert on `https://localhost:7091`, fonzygrok handles it transparently — no extra flags needed.
 
 ### Request Inspector
 
@@ -154,7 +183,7 @@ The client auto-detects `./fonzygrok.yaml` and `~/.fonzygrok.yaml`. Override wit
 By default, the client shows human-friendly messages on stderr and suppresses JSON logs. To see structured JSON logs on stdout (useful for piping to log aggregators):
 
 ```bash
-fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000 --verbose
+fonzygrok --port 3000 --verbose
 ```
 
 Both streams are active simultaneously — Display output on stderr, JSON on stdout.
@@ -167,19 +196,25 @@ Both streams are active simultaneously — Display output on stderr, JSON on std
 | `FONZYGROK_TOKEN` | `--token` |
 
 ```bash
-export FONZYGROK_SERVER=fonzygrok.com
 export FONZYGROK_TOKEN=fgk_abc123
 fonzygrok --port 3000
+```
+
+On Windows (PowerShell), set permanently:
+
+```powershell
+[Environment]::SetEnvironmentVariable("FONZYGROK_TOKEN", "fgk_abc123", "User")
 ```
 
 ### Complete Flag Reference
 
 | Flag | Default | Description |
 |:-----|:--------|:------------|
-| `--server` | — | Server address (domain or host:port) |
+| `--server` | `fonzygrok.com` | Server address (domain or host:port) |
 | `--token` | — | API token for authentication |
 | `--port` | — | Local port to expose (**required**) |
 | `--name` | (auto) | Custom subdomain name |
+| `--protocol` | `http` | Tunnel protocol: `http` or `tcp` |
 | `--config` | (auto-detect) | Path to YAML config file |
 | `--inspect` | `localhost:4040` | Inspector web UI listen address |
 | `--no-inspect` | `false` | Disable the request inspector |
@@ -192,7 +227,7 @@ fonzygrok --port 3000
 Expose a local TCP service (e.g., database, game server, SSH) via a raw TCP tunnel:
 
 ```bash
-fonzygrok --server fonzygrok.com --token fgk_abc123 --port 5432 --protocol tcp
+fonzygrok --port 5432 --protocol tcp
 ```
 
 ```
@@ -212,9 +247,7 @@ The server enforces per-tunnel rate limiting (token bucket). When exceeded, HTTP
 Restrict which IPs can access your tunnel:
 
 ```bash
-fonzygrok --server fonzygrok.com --token fgk_abc123 --port 3000 \
-  --allow-ip 203.0.113.10 \
-  --allow-ip 10.0.0.0/8
+fonzygrok --port 3000 --allow-ip 203.0.113.10 --allow-ip 10.0.0.0/8
 ```
 
 Blocked IPs receive **403 Forbidden**. CIDR notation is supported. Without `--allow-ip`, all IPs are allowed.
@@ -236,11 +269,12 @@ The server includes a web dashboard at the apex domain (e.g., `https://fonzygrok
 
 ### Prerequisites
 
-- **A domain** with wildcard DNS: `*.tunnel.yourdomain.com` → your server IP
+- **A domain** with wildcard DNS: `*.yourdomain.com` → your server IP
 - **A server** (VPS, EC2, etc.) with ports open:
   - `2222` — SSH tunnel connections
   - `80` / `443` — Public HTTP/HTTPS traffic
   - `9090` — Admin API (bind to localhost or private network)
+  - `40000-40100` — TCP tunnel port range (optional)
 - **Docker** and **Docker Compose**
 
 ### Docker Deployment
@@ -255,7 +289,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-DOMAIN=tunnel.yourdomain.com
+DOMAIN=yourdomain.com
 TLS_ENABLED=true
 SSH_PORT=2222
 HTTP_PORT=80
@@ -268,6 +302,17 @@ Start the server:
 ```bash
 docker compose up -d
 ```
+
+### DNS Configuration
+
+Set up two DNS records pointing to your server's IP:
+
+| Type | Name | Value |
+|:-----|:-----|:------|
+| A | `yourdomain.com` | Your server IP |
+| A | `*.yourdomain.com` | Your server IP |
+
+The wildcard record is required for tunnel subdomains (e.g., `my-app.yourdomain.com`).
 
 ### TLS / HTTPS Setup
 
@@ -310,13 +355,17 @@ docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --dat
 
 | Flag | Default | Description |
 |:-----|:--------|:------------|
-| `--data-dir` | `./data` | Directory for database and SSH host key |
-| `--domain` | `tunnel.localhost` | Base domain for subdomain routing |
+| `--data-dir` | `./data` | Directory for SSH host key |
+| `--database-url` | (auto) | PostgreSQL connection string |
+| `--domain` | `localhost` | Base domain for subdomain routing |
 | `--ssh-addr` | `:2222` | SSH listener address |
 | `--http-addr` | `:8080` | HTTP edge router address |
 | `--admin-addr` | `127.0.0.1:9090` | Admin API listen address |
 | `--tls` | `false` | Enable auto-TLS via Let's Encrypt |
 | `--tls-cert-dir` | `<data-dir>/certs` | TLS certificate cache directory |
+| `--tcp-port-range` | `40000-60000` | TCP tunnel port range (MIN-MAX) |
+| `--rate-limit` | `100` | Default requests per second per tunnel |
+| `--rate-burst` | `200` | Rate limit burst size |
 | `--config` | — | Path to YAML config file |
 
 #### Docker Environment Variables
@@ -326,43 +375,48 @@ docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --dat
 | `DOMAIN` | `tunnel.localhost` | Base domain for tunnel routing |
 | `TLS_ENABLED` | `false` | Enable HTTPS with Let's Encrypt |
 | `SSH_PORT` | `2222` | Host port for SSH connections |
-| `HTTP_PORT` | `8080` | Host port for HTTP traffic |
+| `HTTP_PORT` | `80` | Host port for HTTP traffic |
 | `HTTPS_PORT` | `443` | Host port for HTTPS traffic |
 | `ADMIN_PORT` | `9090` | Host port for admin API |
+| `DATABASE_URL` | (auto) | PostgreSQL connection string |
+| `TCP_PORT_RANGE` | `40000-40100` | TCP tunnel port range |
+| `RATE_LIMIT` | `100` | Requests per second per tunnel |
+| `RATE_BURST` | `200` | Rate limit burst size |
 
 ### Architecture
 
 ```
-                    ┌───────────────────────────────────────────┐
-                    │            fonzygrok-server               │
-                    │                                           │
-  :2222 ───────────►│  SSH Listener                             │
-  (client connects) │    ├── Auth (token validation via SQLite) │
-                    │    ├── Control Channel (tunnel register)  │
-                    │    └── Proxy Channels (HTTP + TCP relay)  │
-                    │                                           │
-  :443 ────────────►│  HTTP Edge Router                         │
-  (public traffic)  │    ├── Subdomain extraction               │
-                    │    ├── Rate limit check                   │
-                    │    ├── IP ACL check                       │
-                    │    ├── Tunnel lookup                      │
-                    │    └── Proxy via SSH channel               │
-                    │                                           │
-  :40000-40100 ────►│  TCP Edge                                 │
-  (TCP tunnels)     │    ├── Port pool allocation               │
-                    │    └── Raw TCP ↔ SSH channel relay        │
-                    │                                           │
-  :9090 ───────────►│  Admin API + Dashboard                    │
-  (management)      │    ├── Token CRUD                         │
-                    │    ├── User management                    │
-                    │    ├── Tunnel listing                     │
-                    │    ├── Health check                       │
-                    │    └── Dashboard UI (served on apex)      │
-                    │                                           │
-                    │  SQLite Store (/data/fonzygrok.db)        │
-                    │    ├── Tokens, Users, Invite Codes        │
-                    │    └── Connection metadata                │
-                    └───────────────────────────────────────────┘
+                    ┌───────────────────────────────────────────────┐
+                    │            fonzygrok-server                   │
+                    │                                               │
+  :2222 ───────────►│  SSH Listener                                 │
+  (client connects) │    ├── Auth (token validation via PostgreSQL) │
+                    │    ├── Control Channel (tunnel register)      │
+                    │    └── Proxy Channels (HTTP + TCP relay)      │
+                    │                                               │
+  :443 ────────────►│  HTTP Edge Router                             │
+  (public traffic)  │    ├── Subdomain extraction                   │
+                    │    ├── Rate limit check                       │
+                    │    ├── IP ACL check                           │
+                    │    ├── Tunnel lookup                          │
+                    │    └── Proxy via SSH channel                  │
+                    │                                               │
+  :40000-40100 ────►│  TCP Edge                                     │
+  (TCP tunnels)     │    ├── Port pool allocation                   │
+                    │    └── Raw TCP ↔ SSH channel relay            │
+                    │                                               │
+  :443 ────────────►│  Dashboard + Install Scripts                  │
+  (apex domain)     │    ├── User auth (bcrypt + JWT sessions)      │
+                    │    ├── Token management                       │
+                    │    ├── Tunnel monitoring                      │
+                    │    ├── Admin panel                            │
+                    │    ├── /install.sh (Unix installer)           │
+                    │    └── /install.ps1 (Windows installer)       │
+                    │                                               │
+                    │  PostgreSQL (via Docker service)               │
+                    │    ├── Tokens, Users, Invite Codes            │
+                    │    └── Connection metadata                    │
+                    └───────────────────────────────────────────────┘
 ```
 
 ---
@@ -371,7 +425,7 @@ docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --dat
 
 ### "missing port in address"
 
-The `--server` flag now auto-appends `:2222` if no port is specified. Make sure you're running the latest client version. If you see this error, update your binary.
+The `--server` flag auto-appends `:2222` if no port is specified. Make sure you're running the latest client version.
 
 ### "connection refused"
 
@@ -381,19 +435,21 @@ The `--server` flag now auto-appends `:2222` if no port is specified. Make sure 
 
 ### "tunnel not found" (404 in browser)
 
-- Verify wildcard DNS is configured: `*.tunnel.yourdomain.com → your server IP`
+- Verify wildcard DNS is configured: `*.yourdomain.com → your server IP`
 - Check the tunnel is active: `curl http://your-server:9090/api/v1/tunnels`
 - The subdomain in the URL must match the tunnel name exactly
+
+### "upstream unreachable" / local service not responding
+
+- Verify your local service is running on the port you specified
+- The client auto-detects HTTP/HTTPS — both work transparently
+- Check that nothing else is blocking localhost connections
 
 ### Inspector not loading
 
 - Open [http://localhost:4040](http://localhost:4040) in your browser
 - If port 4040 is already in use, set a different address: `--inspect 127.0.0.1:5050`
 - Disable with `--no-inspect` if you don't need it
-
-### "unexpected EOF" on proxy requests
-
-This was fixed in v1.1.2. Update your server and client to the latest version. If you're self-hosting, redeploy with the latest code.
 
 ### Client shows raw JSON instead of pretty output
 
