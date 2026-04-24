@@ -31,6 +31,14 @@ import (
 
 // --- Server Helpers ---
 
+func e2eDatabaseURL() string {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = os.Getenv("TEST_DATABASE_URL")
+	}
+	return databaseURL
+}
+
 // serverOpts configures the test server.
 type serverOpts struct {
 	// Domain overrides the base domain (default: "tunnel.test.local").
@@ -70,10 +78,7 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	edgeAddr := getAvailPort(t)
 	adminAddr := getAvailPort(t)
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = os.Getenv("TEST_DATABASE_URL")
-	}
+	databaseURL := e2eDatabaseURL()
 
 	config := server.ServerConfig{
 		DataDir:     tmpDir,
@@ -117,7 +122,8 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 		cancel()
 		t.Fatalf("startTestServer: hash password: %v", err)
 	}
-	adminUser, err := srv.Store().CreateUser("e2eadmin", "e2e@test.com", hash, "admin")
+	adminName := "e2eadmin-" + sanitizeName(t.Name())
+	adminUser, err := srv.Store().CreateUser(adminName, adminName+"@test.local", hash, "admin")
 	if err != nil {
 		cancel()
 		t.Fatalf("startTestServer: create admin user: %v", err)

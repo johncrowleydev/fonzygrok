@@ -52,8 +52,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	domain := "tunnel.test.local"
 	config := server.ServerConfig{
-		DataDir: tmpDir,
-		Domain:  domain,
+		DataDir:     tmpDir,
+		Domain:      domain,
+		DatabaseURL: e2eDatabaseURL(),
 		SSH: server.SSHConfig{
 			Addr:        "127.0.0.1:0",
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -73,7 +74,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 
 	// Create a token before starting (since we have store access).
-	_, _, err = srv.Store().CreateToken("e2e-test")
+	_, _, err = srv.Store().CreateToken("e2e-test-" + sanitizeName(t.Name()))
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -108,8 +109,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 	adminAddr := getAvailableAddr(t)
 
 	config2 := server.ServerConfig{
-		DataDir: tmpDir,
-		Domain:  domain,
+		DataDir:     tmpDir,
+		Domain:      domain,
+		DatabaseURL: e2eDatabaseURL(),
 		SSH: server.SSHConfig{
 			Addr:        sshAddr,
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -129,7 +131,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 
 	// Create a token in the new server's store.
-	tok2, rawToken2, err := srv2.Store().CreateToken("e2e-test-2")
+	tok2, rawToken2, err := srv2.Store().CreateToken("e2e-test-2-" + sanitizeName(t.Name()))
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
@@ -143,7 +145,8 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	// Create an admin user and JWT for authenticated admin API calls.
 	hash, _ := auth.HashPassword("e2etestpassword1")
-	adminUser, _ := srv2.Store().CreateUser("e2eadmin", "e2e@test.com", hash, "admin")
+	adminName := "e2eadmin-legacy-" + sanitizeName(t.Name())
+	adminUser, _ := srv2.Store().CreateUser(adminName, adminName+"@test.local", hash, "admin")
 	jwtSecretPath := filepath.Join(tmpDir, "jwt_secret")
 	jwtMgr, _ := auth.NewJWTManager(jwtSecretPath, 24*time.Hour)
 	jwtToken, _ := jwtMgr.CreateToken(auth.Claims{
