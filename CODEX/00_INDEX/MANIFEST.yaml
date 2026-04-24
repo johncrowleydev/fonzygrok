@@ -536,9 +536,10 @@ documents:
     tags: [governance, infrastructure, operations, deployment, docker]
     agents: [all]
     summary: >
-      Fonzygrok infrastructure decisions: Docker Compose on single VPS,
-      SQLite embedded database, Go single-binary builds, port assignments,
-      security model, adaptation table from architecture assumptions.
+      Fonzygrok infrastructure decisions: Docker Compose on single VPS/EC2,
+      PostgreSQL 16 in Docker Compose, Alpine runtime application image,
+      GitHub Actions tag-triggered release/deploy, port assignments,
+      security model, and backup/restore operations.
 
   # ── 20_BLUEPRINTS ──────────────────────────────────────────────────────────
   - id: BLU-001
@@ -624,8 +625,8 @@ documents:
     agents: [architect]
     summary: >
       Step-by-step production deployment runbook for fonzygrok on Ubuntu EC2
-      with Docker Compose. Covers setup, configuration, deployment, and
-      post-deployment verification.
+      with Docker Compose, PostgreSQL, tag-triggered GitHub Actions release/deploy,
+      first-time host bootstrap, operational commands, and post-deployment verification.
   # ── 40_VERIFICATION ────────────────────────────────────────────────────────
   # (empty — add project-specific verification docs here)
 

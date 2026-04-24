@@ -273,9 +273,10 @@ The server includes a web dashboard at the apex domain (e.g., `https://fonzygrok
 - **A server** (VPS, EC2, etc.) with ports open:
   - `2222` — SSH tunnel connections
   - `80` / `443` — Public HTTP/HTTPS traffic
-  - `9090` — Admin API (bind to localhost or private network)
   - `40000-40100` — TCP tunnel port range (optional)
+  - `9090` — Admin API only if you intentionally expose it; by default keep it internal and use host/container access
 - **Docker** and **Docker Compose**
+- **PostgreSQL via Docker Compose** (the bundled Compose file starts `postgres:16-alpine` with a persistent named volume)
 
 ### Docker Deployment
 
@@ -292,16 +293,22 @@ Edit `.env`:
 DOMAIN=yourdomain.com
 TLS_ENABLED=true
 SSH_PORT=2222
-HTTP_PORT=80
 HTTPS_PORT=443
-ADMIN_PORT=9090
+POSTGRES_USER=fonzygrok
+POSTGRES_PASSWORD=change-me-to-a-long-random-value
+POSTGRES_DB=fonzygrok
+TCP_PORT_RANGE=40000-40100
 ```
 
-Start the server:
+`DATABASE_URL` is constructed by `docker/docker-compose.yml` from the PostgreSQL variables above. Developers and CI may set `TEST_DATABASE_URL` for test databases; it is not required for normal production Compose deployment.
+
+Start the server manually:
 
 ```bash
 docker compose up -d
 ```
+
+For the canonical production release path, push a human-approved `v*` tag. The GitHub Actions release workflow builds binaries, publishes release artifacts, SSHes to the production host, copies the pre-built Linux binaries into `bin/`, and restarts Docker Compose. Branch pushes do not deploy production.
 
 ### DNS Configuration
 
@@ -377,8 +384,9 @@ docker exec fonzygrok-server fonzygrok-server token revoke --id tok_abc123 --dat
 | `SSH_PORT` | `2222` | Host port for SSH connections |
 | `HTTP_PORT` | `80` | Host port for HTTP traffic |
 | `HTTPS_PORT` | `443` | Host port for HTTPS traffic |
-| `ADMIN_PORT` | `9090` | Host port for admin API |
-| `DATABASE_URL` | (auto) | PostgreSQL connection string |
+| `ADMIN_PORT` | `9090` | Optional host port for direct admin API access; not exposed by default in Compose |
+| `DATABASE_URL` | (auto) | PostgreSQL connection string constructed by Docker Compose |
+| `TEST_DATABASE_URL` | — | Optional developer/CI test database URL; not used by production Compose |
 | `TCP_PORT_RANGE` | `40000-40100` | TCP tunnel port range |
 | `RATE_LIMIT` | `100` | Requests per second per tunnel |
 | `RATE_BURST` | `200` | Rate limit burst size |
