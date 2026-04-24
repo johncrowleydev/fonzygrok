@@ -97,6 +97,11 @@ func (d *Display) Disconnected() {
 	fmt.Fprintf(d.w, "  %s\n", d.yellow("⚠ Disconnected from server"))
 }
 
+// Retrying prints a yellow retry status message.
+func (d *Display) Retrying(backoffSec int) {
+	fmt.Fprintf(d.w, "  %s\n", d.yellow(fmt.Sprintf("↻ Retrying in %ds...", backoffSec)))
+}
+
 // Shutdown prints the shutdown message.
 func (d *Display) Shutdown() {
 	fmt.Fprintf(d.w, "  fonzygrok stopped.\n")

@@ -17,6 +17,19 @@ const (
 	BackoffMultiplier = 2.0
 )
 
+// ConnectHooks receives lifecycle notifications from ConnectWithRetryHooks.
+// OnConnected is passed a per-connection context that is cancelled when that
+// specific SSH connection is lost or when the parent context is cancelled.
+// OnConnected should perform setup and return promptly; if it blocks,
+// ConnectWithRetryHooks still monitors the connection and reconnects on loss.
+type ConnectHooks struct {
+	OnConnecting       func(attempt int)
+	OnConnectionFailed func(err error, attempt int, backoff time.Duration)
+	OnRetrying         func(backoff time.Duration)
+	OnConnected        func(connCtx context.Context) error
+	OnDisconnected     func(err error, backoff time.Duration)
+}
+
 // ConnectWithRetry attempts to connect to the server, retrying with
 // exponential backoff (1s, 2s, 4s, 8s, 16s, 30s, 30s...) until
 // the context is cancelled. On success the backoff resets.
@@ -26,11 +39,28 @@ const (
 //
 // ConnectWithRetry blocks until the context is cancelled.
 func (c *Connector) ConnectWithRetry(ctx context.Context, onConnect func() error) error {
+	return c.ConnectWithRetryHooks(ctx, ConnectHooks{
+		OnConnected: func(context.Context) error {
+			if onConnect == nil {
+				return nil
+			}
+			return onConnect()
+		},
+	})
+}
+
+// ConnectWithRetryHooks attempts to connect to the server and owns the full
+// per-connection lifecycle: connect, setup callback, connection monitoring,
+// disconnect notification, cleanup, and retry.
+func (c *Connector) ConnectWithRetryHooks(ctx context.Context, hooks ConnectHooks) error {
 	backoff := InitialBackoff
 	attempt := 0
 
 	for {
 		attempt++
+		if hooks.OnConnecting != nil {
+			hooks.OnConnecting(attempt)
+		}
 
 		// Try to connect.
 		err := c.Connect(ctx)
@@ -40,7 +70,12 @@ func (c *Connector) ConnectWithRetry(ctx context.Context, onConnect func() error
 				slog.Int64("backoff_ms", backoff.Milliseconds()),
 				slog.String("error", err.Error()),
 			)
-
+			if hooks.OnConnectionFailed != nil {
+				hooks.OnConnectionFailed(err, attempt, backoff)
+			}
+			if hooks.OnRetrying != nil {
+				hooks.OnRetrying(backoff)
+			}
 			if sleepErr := c.sleepWithContext(ctx, backoff); sleepErr != nil {
 				return sleepErr // context cancelled
 			}
@@ -48,25 +83,54 @@ func (c *Connector) ConnectWithRetry(ctx context.Context, onConnect func() error
 			continue
 		}
 
-		// Connection succeeded — reset backoff.
+		// Connection succeeded — reset backoff for future disconnect retries.
 		backoff = InitialBackoff
 		attempt = 0
 
 		c.logger.Info("connected, running onConnect callback")
 
-		// Run the post-connect callback (e.g., open control channel, register tunnels).
-		if onConnect != nil {
-			if cbErr := onConnect(); cbErr != nil {
+		connCtx, cancelConn := context.WithCancel(ctx)
+		setupErr := make(chan error, 1)
+		if hooks.OnConnected != nil {
+			go func() { setupErr <- hooks.OnConnected(connCtx) }()
+		} else {
+			setupErr <- nil
+		}
+
+		disconnected := make(chan struct{})
+		go func() {
+			c.waitForDisconnect(connCtx)
+			close(disconnected)
+		}()
+
+		select {
+		case cbErr := <-setupErr:
+			if cbErr != nil {
 				c.logger.Warn("onConnect callback failed",
 					slog.String("error", cbErr.Error()),
 				)
+				cancelConn()
 				c.Close()
+				if hooks.OnConnectionFailed != nil {
+					hooks.OnConnectionFailed(cbErr, 1, backoff)
+				}
+				if hooks.OnRetrying != nil {
+					hooks.OnRetrying(backoff)
+				}
+				if sleepErr := c.sleepWithContext(ctx, backoff); sleepErr != nil {
+					return sleepErr
+				}
+				backoff = nextBackoff(backoff)
 				continue
 			}
+			// Setup completed. Continue monitoring until disconnect or cancellation.
+			<-disconnected
+		case <-disconnected:
+			// Setup may still be running; cancel its per-connection context and let
+			// lifecycle proceed so reconnect is not blocked by a long-lived callback.
 		}
 
-		// Wait for disconnection.
-		c.waitForDisconnect(ctx)
+		cancelConn()
 
 		// If context was cancelled, exit cleanly.
 		if ctx.Err() != nil {
@@ -79,6 +143,12 @@ func (c *Connector) ConnectWithRetry(ctx context.Context, onConnect func() error
 			slog.Int64("backoff_ms", backoff.Milliseconds()),
 		)
 		c.Close()
+		if hooks.OnDisconnected != nil {
+			hooks.OnDisconnected(nil, backoff)
+		}
+		if hooks.OnRetrying != nil {
+			hooks.OnRetrying(backoff)
+		}
 
 		if sleepErr := c.sleepWithContext(ctx, backoff); sleepErr != nil {
 			return sleepErr

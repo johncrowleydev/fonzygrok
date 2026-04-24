@@ -106,6 +106,18 @@ func TestDisplayDisconnected(t *testing.T) {
 	}
 }
 
+// TestDisplayRetrying verifies retry status output.
+func TestDisplayRetrying(t *testing.T) {
+	var buf bytes.Buffer
+	d := NewDisplayNoColor(&buf)
+	d.Retrying(5)
+
+	got := buf.String()
+	if !strings.Contains(got, "Retrying in 5s...") {
+		t.Errorf("Retrying = %q, should contain retry delay", got)
+	}
+}
+
 // TestDisplayShutdown verifies shutdown message.
 func TestDisplayShutdown(t *testing.T) {
 	var buf bytes.Buffer
