@@ -45,6 +45,7 @@ type EdgeConfig struct {
 
 const (
 	defaultHTTPReadHeaderTimeout = 5 * time.Second
+	defaultHTTPReadTimeout       = 15 * time.Second
 	defaultHTTPWriteTimeout      = 30 * time.Second
 	defaultEdgeWriteTimeout      = 10 * time.Minute
 	defaultHTTPIdleTimeout       = 120 * time.Second
