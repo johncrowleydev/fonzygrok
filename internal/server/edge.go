@@ -29,7 +29,27 @@ type EdgeConfig struct {
 	// ProxyTimeout is the maximum time to wait for a proxied response.
 	// Default: 30s.
 	ProxyTimeout time.Duration
+	// ReadHeaderTimeout limits how long the server spends reading request headers.
+	// Default: 5s.
+	ReadHeaderTimeout time.Duration
+	// ReadTimeout limits how long the server spends reading the full request.
+	// Default: 0 (disabled) for edge tunnel traffic so slow/large uploads are not cut off.
+	ReadTimeout time.Duration
+	// WriteTimeout limits response writes. Default: 10m for edge tunnel responses,
+	// which may be long-lived streams and should not use a short API timeout.
+	WriteTimeout time.Duration
+	// IdleTimeout limits how long keep-alive connections remain idle.
+	// Default: 120s.
+	IdleTimeout time.Duration
 }
+
+const (
+	defaultHTTPReadHeaderTimeout = 5 * time.Second
+	defaultHTTPReadTimeout       = 15 * time.Second
+	defaultHTTPWriteTimeout      = 30 * time.Second
+	defaultEdgeWriteTimeout      = 10 * time.Minute
+	defaultHTTPIdleTimeout       = 120 * time.Second
+)
 
 // EdgeRouter routes incoming public HTTP requests to the correct tunnel
 // by extracting the subdomain from the Host header and proxying the
@@ -40,9 +60,9 @@ type EdgeRouter struct {
 	logger            *slog.Logger
 	server            *http.Server
 	tlsMgr            *TLSManager
-	redirectSrv       *http.Server   // HTTP→HTTPS redirect server (when TLS enabled)
-	baseDomainHandler http.Handler   // fallback handler for apex/base domain (dashboard)
-	rateLimiter       *RateLimiter   // per-tunnel rate limiter
+	redirectSrv       *http.Server // HTTP→HTTPS redirect server (when TLS enabled)
+	baseDomainHandler http.Handler // fallback handler for apex/base domain (dashboard)
+	rateLimiter       *RateLimiter // per-tunnel rate limiter
 }
 
 // NewEdgeRouter creates a new HTTP edge router.
@@ -50,6 +70,7 @@ func NewEdgeRouter(config EdgeConfig, tunnels *TunnelManager, logger *slog.Logge
 	if config.ProxyTimeout == 0 {
 		config.ProxyTimeout = 30 * time.Second
 	}
+	config = applyEdgeTimeoutDefaults(config)
 
 	e := &EdgeRouter{
 		config:  config,
@@ -61,11 +82,41 @@ func NewEdgeRouter(config EdgeConfig, tunnels *TunnelManager, logger *slog.Logge
 	mux.HandleFunc("/", e.handleRequest)
 
 	e.server = &http.Server{
-		Addr:    config.Addr,
-		Handler: mux,
+		Addr:              config.Addr,
+		Handler:           mux,
+		ReadHeaderTimeout: config.ReadHeaderTimeout,
+		ReadTimeout:       config.ReadTimeout,
+		WriteTimeout:      config.WriteTimeout,
+		IdleTimeout:       config.IdleTimeout,
 	}
 
 	return e
+}
+
+func applyEdgeTimeoutDefaults(config EdgeConfig) EdgeConfig {
+	if config.ReadHeaderTimeout == 0 {
+		config.ReadHeaderTimeout = defaultHTTPReadHeaderTimeout
+	}
+	if config.WriteTimeout == 0 {
+		// Use a deliberately long edge write timeout so slowloris-style writes are
+		// bounded without cutting off normal tunnel streams as quickly as API calls.
+		config.WriteTimeout = defaultEdgeWriteTimeout
+	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = defaultHTTPIdleTimeout
+	}
+	return config
+}
+
+func (e *EdgeRouter) newRedirectServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: e.config.ReadHeaderTimeout,
+		ReadTimeout:       e.config.ReadTimeout,
+		WriteTimeout:      e.config.WriteTimeout,
+		IdleTimeout:       e.config.IdleTimeout,
+	}
 }
 
 // Start begins listening for HTTP requests on the configured address.
@@ -135,10 +186,7 @@ func (e *EdgeRouter) startTLS(ctx context.Context) error {
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	}))
 
-	e.redirectSrv = &http.Server{
-		Addr:    redirectAddr,
-		Handler: redirectHandler,
-	}
+	e.redirectSrv = e.newRedirectServer(redirectAddr, redirectHandler)
 
 	redirectLn, err := net.Listen("tcp", redirectAddr)
 	if err != nil {

@@ -19,6 +19,18 @@ import (
 type AdminConfig struct {
 	// Addr is the listen address (e.g., "127.0.0.1:9090").
 	Addr string
+	// ReadHeaderTimeout limits how long the server spends reading request headers.
+	// Default: 5s.
+	ReadHeaderTimeout time.Duration
+	// ReadTimeout limits how long the server spends reading the full request.
+	// Default: 15s.
+	ReadTimeout time.Duration
+	// WriteTimeout limits how long the server spends writing a response.
+	// Default: 30s.
+	WriteTimeout time.Duration
+	// IdleTimeout limits how long keep-alive connections remain idle.
+	// Default: 120s.
+	IdleTimeout time.Duration
 }
 
 // AdminAPI serves the admin REST API per CON-002 §4.
@@ -40,6 +52,8 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$`)
 
 // NewAdminAPI creates a new admin API server.
 func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, tunnels *TunnelManager, sshSrv *SSHServer, logger *slog.Logger) *AdminAPI {
+	config = applyAdminTimeoutDefaults(config)
+
 	a := &AdminAPI{
 		config:    config,
 		store:     st,
@@ -109,11 +123,31 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 	)))
 
 	a.server = &http.Server{
-		Addr:    config.Addr,
-		Handler: corsMiddleware(a.mux),
+		Addr:              config.Addr,
+		Handler:           corsMiddleware(a.mux),
+		ReadHeaderTimeout: config.ReadHeaderTimeout,
+		ReadTimeout:       config.ReadTimeout,
+		WriteTimeout:      config.WriteTimeout,
+		IdleTimeout:       config.IdleTimeout,
 	}
 
 	return a
+}
+
+func applyAdminTimeoutDefaults(config AdminConfig) AdminConfig {
+	if config.ReadHeaderTimeout == 0 {
+		config.ReadHeaderTimeout = defaultHTTPReadHeaderTimeout
+	}
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = defaultHTTPReadTimeout
+	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = defaultHTTPWriteTimeout
+	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = defaultHTTPIdleTimeout
+	}
+	return config
 }
 
 // Start begins serving the admin API.
@@ -396,8 +430,6 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]interface{}{"tunnels": items})
 }
 
-
-
 // handleMetrics returns aggregated metrics across all active tunnels.
 func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	active := a.tunnels.ListActive()
@@ -422,12 +454,12 @@ func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(a.startTime).Seconds()
 
 	resp := struct {
-		TotalBytesIn       int64   `json:"total_bytes_in"`
-		TotalBytesOut      int64   `json:"total_bytes_out"`
-		TotalRequestsProxied int64 `json:"total_requests_proxied"`
-		ActiveTunnels      int     `json:"active_tunnels"`
-		ActiveClients      int     `json:"active_clients"`
-		UptimeSeconds      float64 `json:"uptime_seconds"`
+		TotalBytesIn         int64   `json:"total_bytes_in"`
+		TotalBytesOut        int64   `json:"total_bytes_out"`
+		TotalRequestsProxied int64   `json:"total_requests_proxied"`
+		ActiveTunnels        int     `json:"active_tunnels"`
+		ActiveClients        int     `json:"active_clients"`
+		UptimeSeconds        float64 `json:"uptime_seconds"`
 	}{
 		TotalBytesIn:         totalBytesIn,
 		TotalBytesOut:        totalBytesOut,
