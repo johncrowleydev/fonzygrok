@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fonzygrok/fonzygrok/internal/client"
 	"github.com/fonzygrok/fonzygrok/internal/config"
@@ -194,8 +195,26 @@ func runTunnel(parent context.Context, serverAddr, token string, port int, insec
 
 	// ConnectWithRetry handles the full lifecycle:
 	// connect → open control → request tunnel → proxy → reconnect on failure.
-	err := connector.ConnectWithRetry(ctx, func() error {
-		return onConnect(ctx, connector, port, name, protocol, inspector, inspectDisplay, display, logger)
+	retryStatusShown := false
+	err := connector.ConnectWithRetryHooks(ctx, client.ConnectHooks{
+		OnConnectionFailed: func(err error, attempt int, backoff time.Duration) {
+			display.ConnectionFailed(err, attempt, int(backoff.Seconds()))
+			retryStatusShown = true
+		},
+		OnDisconnected: func(err error, backoff time.Duration) {
+			display.Disconnected()
+			retryStatusShown = false
+		},
+		OnRetrying: func(backoff time.Duration) {
+			if retryStatusShown {
+				retryStatusShown = false
+				return
+			}
+			display.Retrying(int(backoff.Seconds()))
+		},
+		OnConnected: func(connCtx context.Context) error {
+			return onConnect(connCtx, connector, port, name, protocol, inspector, inspectDisplay, display, logger)
+		},
 	})
 
 	if err != nil && err != context.Canceled {
@@ -263,16 +282,17 @@ func onConnect(ctx context.Context, connector *client.Connector, port int, name 
 	go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeProxy))
 	go proxy.HandleChannels(ctx, sshClient.HandleChannelOpen(client.ChannelTypeTCPProxy))
 
-	// Block until context is done (signal or disconnect detected by caller).
-	<-ctx.Done()
+	go func() {
+		<-ctx.Done()
 
-	logger.Info("shutting down tunnel",
-		slog.String("tunnel_id", assignment.TunnelID),
-	)
+		logger.Info("shutting down tunnel",
+			slog.String("tunnel_id", assignment.TunnelID),
+		)
 
-	// Best-effort close tunnel on the control channel.
-	cc.CloseTunnel(assignment.TunnelID)
-	cc.Close()
+		// Best-effort close tunnel on the control channel.
+		cc.CloseTunnel(assignment.TunnelID)
+		cc.Close()
+	}()
 
 	return nil
 }

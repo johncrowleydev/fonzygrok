@@ -25,6 +25,18 @@ type AdminConfig struct {
 	// If empty, safe local-development origins are allowed plus same-origin
 	// requests. Additional origins may be supplied via FONZYGROK_ALLOWED_ORIGINS.
 	AllowedOrigins []string
+	// ReadHeaderTimeout limits how long the server spends reading request headers.
+	// Default: 5s.
+	ReadHeaderTimeout time.Duration
+	// ReadTimeout limits how long the server spends reading the full request.
+	// Default: 15s.
+	ReadTimeout time.Duration
+	// WriteTimeout limits how long the server spends writing a response.
+	// Default: 30s.
+	WriteTimeout time.Duration
+	// IdleTimeout limits how long keep-alive connections remain idle.
+	// Default: 120s.
+	IdleTimeout time.Duration
 }
 
 // AdminAPI serves the admin REST API per CON-002 §4.
@@ -46,6 +58,8 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$`)
 
 // NewAdminAPI creates a new admin API server.
 func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, tunnels *TunnelManager, sshSrv *SSHServer, logger *slog.Logger) *AdminAPI {
+	config = applyAdminTimeoutDefaults(config)
+
 	a := &AdminAPI{
 		config:    config,
 		store:     st,
@@ -115,11 +129,31 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 	))))
 
 	a.server = &http.Server{
-		Addr:    config.Addr,
-		Handler: corsMiddleware(a.mux, config.AllowedOrigins),
+		Addr:              config.Addr,
+		Handler:           corsMiddleware(a.mux, config.AllowedOrigins),
+		ReadHeaderTimeout: config.ReadHeaderTimeout,
+		ReadTimeout:       config.ReadTimeout,
+		WriteTimeout:      config.WriteTimeout,
+		IdleTimeout:       config.IdleTimeout,
 	}
 
 	return a
+}
+
+func applyAdminTimeoutDefaults(config AdminConfig) AdminConfig {
+	if config.ReadHeaderTimeout == 0 {
+		config.ReadHeaderTimeout = defaultHTTPReadHeaderTimeout
+	}
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = defaultHTTPReadTimeout
+	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = defaultHTTPWriteTimeout
+	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = defaultHTTPIdleTimeout
+	}
+	return config
 }
 
 // Start begins serving the admin API.

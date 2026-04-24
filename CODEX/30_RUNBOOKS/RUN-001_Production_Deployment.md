@@ -8,8 +8,8 @@ agents: [architect]
 tags: [deployment, docker, production, runbook]
 related: [GOV-008, BLU-001]
 created: 2026-03-31
-updated: 2026-04-07
-version: 4.0.0
+updated: 2026-04-24
+version: 5.0.0
 ---
 
 # Production Deployment: fonzygrok on Ubuntu EC2 + Docker
@@ -174,7 +174,9 @@ POSTGRES_DB=fonzygrok
 
 Save and exit nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
-### 3.5 Build and start
+### 3.5 First-time manual start
+
+Production releases are normally deployed by GitHub Actions when a human-approved `v*` tag is pushed. Use this manual Compose start only for first-time host bootstrap or emergency operator-driven recovery after the release workflow has placed Linux binaries in `~/fonzygrok/bin`.
 
 ```bash
 cd ~/fonzygrok/docker
@@ -184,9 +186,9 @@ docker compose up -d --build
 This will:
 1. Pull `postgres:16-alpine` (first run only)
 2. Start PostgreSQL with a persistent named volume (`fonzygrok-pgdata`)
-3. Wait for PG health check to pass
-4. Build the fonzygrok server image from pre-built binaries (Dockerfile.prod)
-5. Run migrations automatically on startup
+3. Wait for the PostgreSQL health check to pass
+4. Build the Alpine runtime image from pre-built binaries (`Dockerfile.prod`)
+5. Run migrations automatically on server startup
 
 Wait for it to finish. Then verify:
 
@@ -620,11 +622,34 @@ cd ~/fonzygrok/docker && docker compose down
 ```
 
 ### Update to a new version
+
+Production deployment is tag-triggered through `.github/workflows/release.yml`. Do **not** deploy production from a branch push or by pulling `main` directly as the normal release path.
+
+1. Complete review and required human release approval.
+2. Create and push an approved SemVer tag, for example:
+
 ```bash
 cd ~/fonzygrok
+git checkout main
 git pull origin main
-cd docker
-docker compose up -d --build
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+3. GitHub Actions will:
+   - Run tests against PostgreSQL using `TEST_DATABASE_URL`.
+   - Build release binaries and checksums.
+   - Create/update the GitHub Release.
+   - SSH to production, check out the tag, copy pre-built Linux binaries into `~/fonzygrok/bin`, and run `docker compose down || true && docker compose up -d --build`.
+
+4. Monitor the Actions run and complete the post-deployment verification checklist below.
+
+### Emergency manual restart after binaries are present
+
+Use only if the host already has the intended release code and binaries:
+
+```bash
+cd ~/fonzygrok/docker && docker compose up -d --build
 ```
 
 ### List tokens

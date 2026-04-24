@@ -31,6 +31,14 @@ import (
 
 // --- Server Helpers ---
 
+func e2eDatabaseURL() string {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = os.Getenv("TEST_DATABASE_URL")
+	}
+	return databaseURL
+}
+
 // serverOpts configures the test server.
 type serverOpts struct {
 	// Domain overrides the base domain (default: "tunnel.test.local").
@@ -46,15 +54,16 @@ func defaultServerOpts() serverOpts {
 
 // testServer holds a running fonzygrok server and its metadata.
 type testServer struct {
-	t         *testing.T
-	srv       *server.Server
-	cancel    context.CancelFunc
-	sshAddr   string
-	edgeAddr  string
-	adminAddr string
-	domain    string
-	dataDir   string
-	jwtToken  string // Pre-created admin JWT for API auth.
+	t             *testing.T
+	srv           *server.Server
+	cancel        context.CancelFunc
+	sshAddr       string
+	edgeAddr      string
+	adminAddr     string
+	domain        string
+	dataDir       string
+	adminUsername string
+	jwtToken      string // Pre-created admin JWT for API auth.
 }
 
 // startTestServer spins up a real fonzygrok server with a temp DB,
@@ -70,13 +79,16 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	edgeAddr := getAvailPort(t)
 	adminAddr := getAvailPort(t)
 
+	databaseURL := e2eDatabaseURL()
+
 	config := server.ServerConfig{
-		DataDir:    tmpDir,
-		Domain:     opts.Domain,
-		TCPPortMin: 40000,
-		TCPPortMax: 41000,
-		RateLimit:  100,
-		RateBurst:  200,
+		DataDir:     tmpDir,
+		Domain:      opts.Domain,
+		DatabaseURL: databaseURL,
+		TCPPortMin:  40000,
+		TCPPortMax:  41000,
+		RateLimit:   100,
+		RateBurst:   200,
 		SSH: server.SSHConfig{
 			Addr:        sshAddr,
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
@@ -111,7 +123,8 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 		cancel()
 		t.Fatalf("startTestServer: hash password: %v", err)
 	}
-	adminUser, err := srv.Store().CreateUser("e2eadmin", "e2e@test.com", hash, "admin")
+	adminName := "e2eadmin-" + sanitizeName(t.Name())
+	adminUser, err := srv.Store().CreateUser(adminName, adminName+"@test.local", hash, "admin")
 	if err != nil {
 		cancel()
 		t.Fatalf("startTestServer: create admin user: %v", err)
@@ -134,15 +147,16 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	}
 
 	ts := &testServer{
-		t:         t,
-		srv:       srv,
-		cancel:    cancel,
-		sshAddr:   sshAddr,
-		edgeAddr:  edgeAddr,
-		adminAddr: adminAddr,
-		domain:    opts.Domain,
-		dataDir:   tmpDir,
-		jwtToken:  jwtToken,
+		t:             t,
+		srv:           srv,
+		cancel:        cancel,
+		sshAddr:       sshAddr,
+		edgeAddr:      edgeAddr,
+		adminAddr:     adminAddr,
+		domain:        opts.Domain,
+		dataDir:       tmpDir,
+		adminUsername: adminName,
+		jwtToken:      jwtToken,
 	}
 
 	t.Cleanup(func() {
