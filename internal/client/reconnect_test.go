@@ -175,6 +175,120 @@ func TestConnectWithRetryReconnect(t *testing.T) {
 	}
 }
 
+// TestConnectWithRetryLifecycleCallbacksReportFailuresAndRetries verifies that
+// clients can surface connection failure and retry lifecycle events.
+func TestConnectWithRetryLifecycleCallbacksReportFailuresAndRetries(t *testing.T) {
+	c := NewConnector(ClientConfig{
+		ServerAddr: "127.0.0.1:1",
+		Token:      testToken,
+		Insecure:   true,
+	}, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	failed := make(chan time.Duration, 1)
+	retrying := make(chan time.Duration, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.ConnectWithRetryHooks(ctx, ConnectHooks{
+			OnConnectionFailed: func(err error, attempt int, backoff time.Duration) {
+				if attempt != 1 {
+					t.Errorf("attempt = %d, want 1", attempt)
+				}
+				failed <- backoff
+			},
+			OnRetrying: func(backoff time.Duration) {
+				retrying <- backoff
+			},
+		})
+	}()
+
+	select {
+	case got := <-failed:
+		if got != InitialBackoff {
+			t.Fatalf("OnConnectionFailed backoff = %v, want %v", got, InitialBackoff)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for OnConnectionFailed")
+	}
+
+	select {
+	case got := <-retrying:
+		if got != InitialBackoff {
+			t.Fatalf("OnRetrying backoff = %v, want %v", got, InitialBackoff)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for OnRetrying")
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != context.Canceled {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ConnectWithRetryHooks did not exit after cancel")
+	}
+}
+
+func TestConnectWithRetryMonitorsConnectionWhenOnConnectedBlocks(t *testing.T) {
+	addr, cleanup := startTestSSHServer(t, testToken)
+
+	c := NewConnector(ClientConfig{
+		ServerAddr: addr,
+		Token:      testToken,
+		Insecure:   true,
+	}, slog.Default())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	connected := make(chan struct{})
+	disconnected := make(chan struct{})
+	releaseOnConnected := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.ConnectWithRetryHooks(ctx, ConnectHooks{
+			OnConnected: func(connCtx context.Context) error {
+				close(connected)
+				<-releaseOnConnected
+				return nil
+			},
+			OnDisconnected: func(err error, backoff time.Duration) {
+				close(disconnected)
+				cancel()
+			},
+		})
+	}()
+
+	select {
+	case <-connected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for initial connection")
+	}
+
+	cleanup()
+
+	select {
+	case <-disconnected:
+	case <-time.After(10 * time.Second):
+		close(releaseOnConnected)
+		t.Fatal("disconnect was not observed while OnConnected was blocked")
+	}
+
+	close(releaseOnConnected)
+	select {
+	case err := <-errCh:
+		if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ConnectWithRetryHooks did not exit")
+	}
+}
+
 // TestConnectWithRetryCallbackError verifies that a failing onConnect
 // callback causes a retry.
 func TestConnectWithRetryCallbackError(t *testing.T) {
