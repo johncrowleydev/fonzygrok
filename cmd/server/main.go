@@ -20,17 +20,17 @@ import (
 	"golang.org/x/term"
 )
 
-// version is set at build time via -ldflags.
-var version = "dev"
+// Version is set at build time via -ldflags.
+var Version = "dev"
 
 func main() {
 	// Set the package-level version for server info / health endpoints.
-	server.Version = version
+	server.Version = Version
 
 	rootCmd := &cobra.Command{
 		Use:     "fonzygrok-server",
 		Short:   "Fonzygrok tunnel server",
-		Version: version,
+		Version: Version,
 	}
 
 	rootCmd.AddCommand(serveCmd())

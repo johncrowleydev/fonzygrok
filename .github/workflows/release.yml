@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -38,28 +42,57 @@ jobs:
         run: go test -race ./...
 
       - name: Build binaries
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p dist
+          LDFLAGS="-s -w -X main.Version=${VERSION}"
 
           # Linux amd64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-server-linux-amd64 ./cmd/server
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-linux-amd64 ./cmd/client
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-server-linux-amd64 ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-linux-amd64 ./cmd/client
 
           # Linux arm64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-server-linux-arm64 ./cmd/server
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-linux-arm64 ./cmd/client
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-server-linux-arm64 ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-linux-arm64 ./cmd/client
 
           # macOS amd64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-server-darwin-amd64 ./cmd/server
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-darwin-amd64 ./cmd/client
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-server-darwin-amd64 ./cmd/server
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-darwin-amd64 ./cmd/client
 
           # macOS arm64 (Apple Silicon)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-server-darwin-arm64 ./cmd/server
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-darwin-arm64 ./cmd/client
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-server-darwin-arm64 ./cmd/server
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-darwin-arm64 ./cmd/client
 
           # Windows amd64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-server-windows-amd64.exe ./cmd/server
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }}" -o dist/fonzygrok-windows-amd64.exe ./cmd/client
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-server-windows-amd64.exe ./cmd/server
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/fonzygrok-windows-amd64.exe ./cmd/client
+
+          ./dist/fonzygrok-linux-amd64 --version | grep -F "$VERSION"
+          ./dist/fonzygrok-server-linux-amd64 --version | grep -F "$VERSION"
+
+      - name: Smoke check server health version
+        env:
+          DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          data_dir="$(mktemp -d)"
+          ./dist/fonzygrok-server-linux-amd64 serve \
+            --data-dir "$data_dir" \
+            --ssh-addr 127.0.0.1:0 \
+            --http-addr 127.0.0.1:0 \
+            --admin-addr 127.0.0.1:19090 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; rm -rf "$data_dir"' EXIT
+          for _ in {1..30}; do
+            if curl -fsS http://127.0.0.1:19090/api/v1/health | tee health.json | grep -F "\"version\":\"$VERSION\""; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server health endpoint did not report version $VERSION"
+          exit 1
 
       - name: Create checksums
         run: |
@@ -86,6 +119,10 @@ jobs:
   deploy:
     needs: release
     runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -94,27 +131,39 @@ jobs:
           go-version-file: go.mod
 
       - name: Build production binaries
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p bin
+          LDFLAGS="-s -w -X main.Version=${VERSION}"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -ldflags "$LDFLAGS" \
             -o bin/fonzygrok-server ./cmd/server
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -ldflags "$LDFLAGS" \
             -o bin/fonzygrok-client ./cmd/client
+          ./bin/fonzygrok-server --version | grep -F "$VERSION"
+          ./bin/fonzygrok-client --version | grep -F "$VERSION"
           ls -lh bin/
 
       - name: Deploy to production
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          SSH="ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key"
-          SCP="scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key"
+          if [ -z "$DEPLOY_HOST_KEY" ]; then
+            echo "DEPLOY_HOST_KEY secret is required (known_hosts format)."
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          SSH="ssh -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key"
+          SCP="scp -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key"
           TARGET="$DEPLOY_USER@$DEPLOY_HOST"
 
           # Ensure repo exists on server (first-time deploy)
@@ -130,11 +179,12 @@ jobs:
           # Rebuild container (Dockerfile.prod just copies binaries into alpine — ~2s)
           $SSH "$TARGET" "cd ~/fonzygrok/docker && docker compose down || true && docker compose up -d --build"
 
-          rm -f ~/.ssh/deploy_key
+          rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts
 
       - name: Post-deploy health check
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
@@ -143,10 +193,16 @@ jobs:
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+          if [ -z "$DEPLOY_HOST_KEY" ]; then
+            echo "DEPLOY_HOST_KEY secret is required (known_hosts format)."
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
             "docker exec fonzygrok-server wget -q --spider http://localhost:9090/api/v1/health" || {
             echo "❌ Health check failed!"
             exit 1
           }
           echo "✅ Health check passed"
-          rm -f ~/.ssh/deploy_key
+          rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts
