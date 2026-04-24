@@ -70,13 +70,19 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	edgeAddr := getAvailPort(t)
 	adminAddr := getAvailPort(t)
 
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = os.Getenv("TEST_DATABASE_URL")
+	}
+
 	config := server.ServerConfig{
-		DataDir:    tmpDir,
-		Domain:     opts.Domain,
-		TCPPortMin: 40000,
-		TCPPortMax: 41000,
-		RateLimit:  100,
-		RateBurst:  200,
+		DataDir:     tmpDir,
+		Domain:      opts.Domain,
+		DatabaseURL: databaseURL,
+		TCPPortMin:  40000,
+		TCPPortMax:  41000,
+		RateLimit:   100,
+		RateBurst:   200,
 		SSH: server.SSHConfig{
 			Addr:        sshAddr,
 			HostKeyPath: filepath.Join(tmpDir, "host_key"),
