@@ -76,7 +76,7 @@ func TestE2E_Dashboard_ThemeToggleExists(t *testing.T) {
 	// We need to be authenticated to see the theme toggle (it's in the nav
 	// of authenticated pages). Log in via the dashboard.
 	// First, create an admin session cookie.
-	loginBody := "username=e2eadmin&password=e2etestpassword1"
+	loginBody := "username=" + ts.adminUsername + "&password=e2etestpassword1"
 	loginReq, _ := http.NewRequest("POST", "http://"+ts.edgeAddr+"/login",
 		strings.NewReader(loginBody))
 	loginReq.Host = ts.domain

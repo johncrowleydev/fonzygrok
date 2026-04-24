@@ -54,15 +54,16 @@ func defaultServerOpts() serverOpts {
 
 // testServer holds a running fonzygrok server and its metadata.
 type testServer struct {
-	t         *testing.T
-	srv       *server.Server
-	cancel    context.CancelFunc
-	sshAddr   string
-	edgeAddr  string
-	adminAddr string
-	domain    string
-	dataDir   string
-	jwtToken  string // Pre-created admin JWT for API auth.
+	t             *testing.T
+	srv           *server.Server
+	cancel        context.CancelFunc
+	sshAddr       string
+	edgeAddr      string
+	adminAddr     string
+	domain        string
+	dataDir       string
+	adminUsername string
+	jwtToken      string // Pre-created admin JWT for API auth.
 }
 
 // startTestServer spins up a real fonzygrok server with a temp DB,
@@ -146,15 +147,16 @@ func startTestServer(t *testing.T, opts serverOpts) *testServer {
 	}
 
 	ts := &testServer{
-		t:         t,
-		srv:       srv,
-		cancel:    cancel,
-		sshAddr:   sshAddr,
-		edgeAddr:  edgeAddr,
-		adminAddr: adminAddr,
-		domain:    opts.Domain,
-		dataDir:   tmpDir,
-		jwtToken:  jwtToken,
+		t:             t,
+		srv:           srv,
+		cancel:        cancel,
+		sshAddr:       sshAddr,
+		edgeAddr:      edgeAddr,
+		adminAddr:     adminAddr,
+		domain:        opts.Domain,
+		dataDir:       tmpDir,
+		adminUsername: adminName,
+		jwtToken:      jwtToken,
 	}
 
 	t.Cleanup(func() {
