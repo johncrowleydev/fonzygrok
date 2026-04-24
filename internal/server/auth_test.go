@@ -616,6 +616,45 @@ func TestListUsersAdmin(t *testing.T) {
 
 // --- T-068: CORS ---
 
+func TestCORSMiddlewareRejectsUntrustedOriginWithoutDatabase(t *testing.T) {
+	handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), nil)
+
+	req := httptest.NewRequest("GET", "/api/v1/health", nil)
+	req.Header.Set("Origin", "http://evil.example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("untrusted origin must not be reflected, got %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("untrusted origin must not receive credentials, got %q", got)
+	}
+}
+
+func TestCORSMiddlewareAllowsConfiguredOriginWithoutDatabase(t *testing.T) {
+	handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), []string{"https://dashboard.example.com"})
+
+	req := httptest.NewRequest("OPTIONS", "/api/v1/health", nil)
+	req.Header.Set("Origin", "https://dashboard.example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("OPTIONS status = %d, want 204", w.Code)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://dashboard.example.com" {
+		t.Fatalf("configured origin should be allowed, got %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("configured origin should allow credentials, got %q", got)
+	}
+}
+
 func TestCORSHeaders(t *testing.T) {
 	admin, _, st := newTestAdminAPI(t)
 	defer st.Close()
@@ -641,15 +680,39 @@ func TestCORSOnRegularRequest(t *testing.T) {
 	defer st.Close()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
-	req.Header.Set("Origin", "http://dashboard.example.com")
+	req.Header.Set("Origin", "http://evil.example.com")
 	w := httptest.NewRecorder()
 	admin.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if w.Header().Get("Access-Control-Allow-Origin") != "http://dashboard.example.com" {
-		t.Error("CORS origin should be echoed on regular requests")
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("untrusted cross-origin request must not receive credentialed CORS headers, got %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("untrusted cross-origin request must not allow credentials, got %q", got)
+	}
+}
+
+func TestCORSAllowsSameOriginOnlyByDefault(t *testing.T) {
+	admin, _, st := newTestAdminAPI(t)
+	defer st.Close()
+
+	req := httptest.NewRequest("OPTIONS", "http://admin.example.com/api/v1/health", nil)
+	req.Host = "admin.example.com"
+	req.Header.Set("Origin", "http://admin.example.com")
+	w := httptest.NewRecorder()
+	admin.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for OPTIONS, got %d", w.Code)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://admin.example.com" {
+		t.Fatalf("same-origin request should receive CORS allow-origin, got %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("same-origin request should allow credentials, got %q", got)
 	}
 }
 
@@ -721,6 +784,36 @@ func TestMetricsEndpointRequiresAuth(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("metrics endpoint should require auth, got %d", w.Code)
+	}
+}
+
+func TestGlobalTunnelEndpointsRequireAdminRole(t *testing.T) {
+	admin, _, st := newTestAdminAPI(t)
+	defer st.Close()
+	userToken := addTestUserAuth(t, admin, st)
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{"GET", "/api/v1/tunnels", ""},
+		{"GET", "/api/v1/metrics", ""},
+		{"DELETE", "/api/v1/tunnels/tun_missing", ""},
+		{"PUT", "/api/v1/tunnels/tun_missing/ratelimit", `{"requests_per_second":1,"burst":1}`},
+		{"PUT", "/api/v1/tunnels/tun_missing/acl", `{"allow_cidrs":["127.0.0.1/32"]}`},
+		{"DELETE", "/api/v1/tunnels/tun_missing/acl", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			req := authReq(httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)), userToken)
+			w := httptest.NewRecorder()
+			admin.Handler().ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("expected 403 for non-admin tunnel/metrics endpoint, got %d body=%s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 

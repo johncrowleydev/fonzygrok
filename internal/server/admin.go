@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -19,6 +21,10 @@ import (
 type AdminConfig struct {
 	// Addr is the listen address (e.g., "127.0.0.1:9090").
 	Addr string
+	// AllowedOrigins is an explicit allowlist for credentialed CORS requests.
+	// If empty, safe local-development origins are allowed plus same-origin
+	// requests. Additional origins may be supplied via FONZYGROK_ALLOWED_ORIGINS.
+	AllowedOrigins []string
 }
 
 // AdminAPI serves the admin REST API per CON-002 §4.
@@ -96,21 +102,21 @@ func NewAdminAPI(config AdminConfig, st *store.Store, jwtMgr *auth.JWTManager, t
 	))))
 
 	// Existing admin-only endpoints (now behind auth).
-	a.mux.Handle("/api/v1/tunnels", a.AuthMiddleware(http.HandlerFunc(
+	a.mux.Handle("/api/v1/tunnels", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleListTunnels,
 		}),
-	)))
-	a.mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(http.HandlerFunc(a.handleTunnelSubRoutes)))
-	a.mux.Handle("/api/v1/metrics", a.AuthMiddleware(http.HandlerFunc(
+	))))
+	a.mux.Handle("/api/v1/tunnels/", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(a.handleTunnelSubRoutes))))
+	a.mux.Handle("/api/v1/metrics", a.AuthMiddleware(a.RequireRole("admin", http.HandlerFunc(
 		a.methodRouteHandler(map[string]http.HandlerFunc{
 			"GET": a.handleMetrics,
 		}),
-	)))
+	))))
 
 	a.server = &http.Server{
 		Addr:    config.Addr,
-		Handler: corsMiddleware(a.mux),
+		Handler: corsMiddleware(a.mux, config.AllowedOrigins),
 	}
 
 	return a
@@ -174,15 +180,30 @@ func (a *AdminAPI) methodRouteHandler(handlers map[string]http.HandlerFunc) http
 	return a.methodRoute(handlers)
 }
 
-// corsMiddleware adds CORS headers for web dashboard access.
-func corsMiddleware(next http.Handler) http.Handler {
+// corsMiddleware adds credentialed CORS headers only for trusted origins.
+// It intentionally avoids reflecting arbitrary Origin values because browsers
+// will include cookies on credentialed requests when allowed.
+func corsMiddleware(next http.Handler, configuredOrigins []string) http.Handler {
+	allowedOrigins := map[string]struct{}{
+		"http://localhost:3000": {},
+		"http://127.0.0.1:3000": {},
+		"https://fonzygrok.com": {},
+	}
+	for _, origin := range append(configuredOrigins, splitAllowedOrigins(os.Getenv("FONZYGROK_ALLOWED_ORIGINS"))...) {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			allowedOrigins[origin] = struct{}{}
+		}
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" {
+		if origin != "" && isAllowedCORSOrigin(origin, r.Host, allowedOrigins) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Add("Vary", "Origin")
 		}
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
@@ -190,6 +211,24 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func splitAllowedOrigins(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, ",")
+}
+
+func isAllowedCORSOrigin(origin, host string, allowed map[string]struct{}) bool {
+	if _, ok := allowed[origin]; ok {
+		return true
+	}
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return false
+	}
+	return strings.EqualFold(originURL.Host, host)
 }
 
 // --- Endpoint handlers ---
@@ -396,8 +435,6 @@ func (a *AdminAPI) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]interface{}{"tunnels": items})
 }
 
-
-
 // handleMetrics returns aggregated metrics across all active tunnels.
 func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	active := a.tunnels.ListActive()
@@ -422,12 +459,12 @@ func (a *AdminAPI) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(a.startTime).Seconds()
 
 	resp := struct {
-		TotalBytesIn       int64   `json:"total_bytes_in"`
-		TotalBytesOut      int64   `json:"total_bytes_out"`
-		TotalRequestsProxied int64 `json:"total_requests_proxied"`
-		ActiveTunnels      int     `json:"active_tunnels"`
-		ActiveClients      int     `json:"active_clients"`
-		UptimeSeconds      float64 `json:"uptime_seconds"`
+		TotalBytesIn         int64   `json:"total_bytes_in"`
+		TotalBytesOut        int64   `json:"total_bytes_out"`
+		TotalRequestsProxied int64   `json:"total_requests_proxied"`
+		ActiveTunnels        int     `json:"active_tunnels"`
+		ActiveClients        int     `json:"active_clients"`
+		UptimeSeconds        float64 `json:"uptime_seconds"`
 	}{
 		TotalBytesIn:         totalBytesIn,
 		TotalBytesOut:        totalBytesOut,

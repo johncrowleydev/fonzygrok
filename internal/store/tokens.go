@@ -115,6 +115,51 @@ func (s *Store) ListTokens() ([]Token, error) {
 	return tokens, nil
 }
 
+// ValidateTokenByID returns an active token by ID. It is intended for
+// ownership checks and post-delete verification; raw token secrets are not
+// needed for these flows.
+func (s *Store) ValidateTokenByID(id string) (*Token, error) {
+	if id == "" {
+		return nil, fmt.Errorf("store: token id is required")
+	}
+
+	var tok Token
+	var userID sql.NullString
+	err := s.db.QueryRow(
+		`SELECT id, name, token_hash, user_id, created_at, last_used_at, is_active FROM tokens WHERE id = $1`,
+		id,
+	).Scan(&tok.ID, &tok.Name, &tok.TokenHash, &userID, &tok.CreatedAt, &tok.LastUsedAt, &tok.IsActive)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("store: token %q not found", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get token by id: %w", err)
+	}
+	if !tok.IsActive {
+		return nil, fmt.Errorf("store: token is revoked")
+	}
+	if userID.Valid {
+		tok.UserID = &userID.String
+	}
+	return &tok, nil
+}
+
+// DeleteTokenForUser marks a token inactive only if the user is authorized.
+// Admin users may delete any token; non-admin users may delete only tokens
+// they own. Unowned legacy tokens are admin-only.
+func (s *Store) DeleteTokenForUser(id, userID, role string) error {
+	tok, err := s.ValidateTokenByID(id)
+	if err != nil {
+		return err
+	}
+	if role != "admin" {
+		if tok.UserID == nil || *tok.UserID != userID {
+			return fmt.Errorf("store: token %q not found", id)
+		}
+	}
+	return s.DeleteToken(id)
+}
+
 // DeleteToken marks a token as inactive (soft delete) by ID.
 // Returns an error if the token does not exist.
 func (s *Store) DeleteToken(id string) error {

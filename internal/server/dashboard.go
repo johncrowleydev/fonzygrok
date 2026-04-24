@@ -106,7 +106,6 @@ func (d *Dashboard) SetTLSEnabled(enabled bool) {
 	d.tlsEnabled = enabled
 }
 
-
 // RegisterRoutes registers all dashboard routes on the given mux.
 // Called from AdminAPI to share the :9090 listener.
 func (d *Dashboard) RegisterRoutes(mux *http.ServeMux) {
@@ -140,16 +139,16 @@ func (d *Dashboard) RegisterRoutes(mux *http.ServeMux) {
 
 // pageData holds data passed to all templates.
 type pageData struct {
-	Title      string
-	Nav        string
-	Claims     *auth.Claims
-	Flash      string
-	FlashType  string
-	Error      string
+	Title     string
+	Nav       string
+	Claims    *auth.Claims
+	Flash     string
+	FlashType string
+	Error     string
 
 	// Form fields (preserved on error).
 	FormUsername   string
-	FormEmail     string
+	FormEmail      string
 	FormInviteCode string
 
 	// Dashboard data.
@@ -343,14 +342,6 @@ func (d *Dashboard) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate invite code.
-	ic, err := d.store.ValidateInviteCode(inviteCode)
-	if err != nil {
-		formData.Error = "Invalid or already used invite code"
-		d.renderPage(w, "register.html", formData)
-		return
-	}
-
 	// Hash password.
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -360,22 +351,19 @@ func (d *Dashboard) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user.
-	user, err := d.store.CreateUser(username, email, hash, "user")
+	// Create user and redeem invite code atomically.
+	user, err := d.store.RegisterUserWithInviteCode(username, email, hash, inviteCode)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "unique") {
 			formData.Error = "Username or email already taken"
+		} else if strings.Contains(err.Error(), "invite code") {
+			formData.Error = "Invalid or already used invite code"
 		} else {
-			d.logger.Error("dashboard: create user", "error", err)
+			d.logger.Error("dashboard: create user with invite", "error", err)
 			formData.Error = "Failed to create account"
 		}
 		d.renderPage(w, "register.html", formData)
 		return
-	}
-
-	// Redeem invite code.
-	if err := d.store.RedeemInviteCode(ic.ID, user.ID); err != nil {
-		d.logger.Error("dashboard: redeem invite code", "error", err)
 	}
 
 	// Issue JWT and set cookie.
@@ -515,7 +503,11 @@ func (d *Dashboard) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := claimsFromCtx(r.Context())
-	if err := d.store.DeleteToken(tokenID); err != nil {
+	if err := d.store.DeleteTokenForUser(tokenID, claims.UserID, claims.Role); err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "revoked") {
+			http.Error(w, "Token not found", http.StatusNotFound)
+			return
+		}
 		d.logger.Error("dashboard: revoke token", "error", err, "token_id", tokenID)
 		http.Error(w, "Failed to revoke token", http.StatusInternalServerError)
 		return
@@ -587,7 +579,6 @@ func (d *Dashboard) renderPage(w http.ResponseWriter, name string, data pageData
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 	}
 }
-
 
 // setSessionCookie creates a JWT and sets it as an HttpOnly cookie.
 func (d *Dashboard) setSessionCookie(w http.ResponseWriter, user *store.User) {
