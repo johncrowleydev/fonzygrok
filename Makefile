@@ -1,16 +1,18 @@
 .PHONY: build build-server build-client test test-e2e lint vet clean docker-build docker-up docker-down docker-logs
 
 VERSION ?= dev
-LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X github.com/fonzygrok/fonzygrok/internal/server.Version=$(VERSION)"
+LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
 ## Build both binaries
 build: build-server build-client
 
 build-server:
-	CGO_ENABLED=1 go build $(LDFLAGS) -o bin/fonzygrok-server ./cmd/server/
+	mkdir -p dist
+	CGO_ENABLED=1 go build $(LDFLAGS) -o dist/fonzygrok-server ./cmd/server/
 
 build-client:
-	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/fonzygrok ./cmd/client/
+	mkdir -p dist
+	CGO_ENABLED=0 go build $(LDFLAGS) -o dist/fonzygrok ./cmd/client/
 
 ## Run all unit tests with race detection
 test:

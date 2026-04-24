@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test, vet, and coverage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fonzygrok
+          POSTGRES_PASSWORD: fonzygrok
+          POSTGRES_DB: fonzygrok_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fonzygrok"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        env:
+          TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
+        run: go test -race ./...
+
+      - name: Generate coverage
+        env:
+          TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
+        run: |
+          go test -covermode=atomic -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tee coverage.txt
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage.txt
+
+  build:
+    name: Build server and client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build VERSION=ci-${{ github.sha }}
+
+      - name: Smoke check versions
+        run: |
+          dist/fonzygrok --version | grep -F "ci-${{ github.sha }}"
+          dist/fonzygrok-server --version | grep -F "ci-${{ github.sha }}"
+
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fonzygrok
+          POSTGRES_PASSWORD: fonzygrok
+          POSTGRES_DB: fonzygrok_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fonzygrok"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: E2E tests
+        env:
+          TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
+        run: go test -v -race -tags=e2e -timeout 60s ./tests/
