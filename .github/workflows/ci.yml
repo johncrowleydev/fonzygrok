@@ -46,14 +46,29 @@ jobs:
 
       - name: Test with race detector
         env:
+          DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
           TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
-        run: go test -race ./...
+        run: |
+          # Store and server tests share the same PostgreSQL database and both
+          # reset schema state, so run DB-backed packages serially to avoid
+          # cross-package migration races.
+          go test -race $(go list ./... | grep -Ev '/internal/(store|server)$')
+          go test -race ./internal/store
+          go test -race ./internal/server
 
       - name: Generate coverage
         env:
+          DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
           TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
         run: |
-          go test -covermode=atomic -coverprofile=coverage.out ./...
+          set -euo pipefail
+          go test -covermode=atomic -coverprofile=coverage.base.out $(go list ./... | grep -Ev '/internal/(store|server)$')
+          go test -covermode=atomic -coverprofile=coverage.store.out ./internal/store
+          go test -covermode=atomic -coverprofile=coverage.server.out ./internal/server
+          head -n 1 coverage.base.out > coverage.out
+          tail -n +2 coverage.base.out >> coverage.out
+          tail -n +2 coverage.store.out >> coverage.out
+          tail -n +2 coverage.server.out >> coverage.out
           go tool cover -func=coverage.out | tee coverage.txt
 
       - name: Upload coverage artifact
@@ -108,5 +123,6 @@ jobs:
 
       - name: E2E tests
         env:
+          DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
           TEST_DATABASE_URL: postgres://fonzygrok:fonzygrok@localhost:5432/fonzygrok_test?sslmode=disable
         run: go test -v -race -tags=e2e -timeout 60s ./tests/
