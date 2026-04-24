@@ -33,7 +33,7 @@ type EdgeConfig struct {
 	// Default: 5s.
 	ReadHeaderTimeout time.Duration
 	// ReadTimeout limits how long the server spends reading the full request.
-	// Default: 15s.
+	// Default: 0 (disabled) for edge tunnel traffic so slow/large uploads are not cut off.
 	ReadTimeout time.Duration
 	// WriteTimeout limits response writes. Default: 10m for edge tunnel responses,
 	// which may be long-lived streams and should not use a short API timeout.
@@ -45,7 +45,6 @@ type EdgeConfig struct {
 
 const (
 	defaultHTTPReadHeaderTimeout = 5 * time.Second
-	defaultHTTPReadTimeout       = 15 * time.Second
 	defaultHTTPWriteTimeout      = 30 * time.Second
 	defaultEdgeWriteTimeout      = 10 * time.Minute
 	defaultHTTPIdleTimeout       = 120 * time.Second
@@ -96,9 +95,6 @@ func NewEdgeRouter(config EdgeConfig, tunnels *TunnelManager, logger *slog.Logge
 func applyEdgeTimeoutDefaults(config EdgeConfig) EdgeConfig {
 	if config.ReadHeaderTimeout == 0 {
 		config.ReadHeaderTimeout = defaultHTTPReadHeaderTimeout
-	}
-	if config.ReadTimeout == 0 {
-		config.ReadTimeout = defaultHTTPReadTimeout
 	}
 	if config.WriteTimeout == 0 {
 		// Use a deliberately long edge write timeout so slowloris-style writes are

@@ -12,8 +12,8 @@ func TestEdgeRouterConfiguresDefaultHTTPServerTimeouts(t *testing.T) {
 	if edge.server.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %v, want %v", edge.server.ReadHeaderTimeout, 5*time.Second)
 	}
-	if edge.server.ReadTimeout != 15*time.Second {
-		t.Fatalf("ReadTimeout = %v, want %v", edge.server.ReadTimeout, 15*time.Second)
+	if edge.server.ReadTimeout != 0 {
+		t.Fatalf("ReadTimeout = %v, want disabled timeout", edge.server.ReadTimeout)
 	}
 	if edge.server.IdleTimeout != 120*time.Second {
 		t.Fatalf("IdleTimeout = %v, want %v", edge.server.IdleTimeout, 120*time.Second)
