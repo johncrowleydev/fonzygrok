@@ -444,9 +444,13 @@ func TestHTMXTokenCreate(t *testing.T) {
 func TestHTMXTokenRevoke(t *testing.T) {
 	mux, _, jwt, st := setupDashboardMux(t)
 	cookie := createTestUser(t, st, jwt, "revokeuser", "user")
+	user, err := st.GetUserByUsername("revokeuser")
+	if err != nil {
+		t.Fatalf("GetUserByUsername: %v", err)
+	}
 
-	// Create a token.
-	tok, _, _ := st.CreateToken("to-revoke", "")
+	// Create a token owned by the logged-in user.
+	tok, _, _ := st.CreateToken("to-revoke", user.ID)
 
 	req := httptest.NewRequest("DELETE", "/dashboard/tokens/"+tok.ID, nil)
 	req.AddCookie(cookie)
@@ -456,6 +460,30 @@ func TestHTMXTokenRevoke(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("DELETE /dashboard/tokens/:id status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestHTMXTokenRevokeRejectsNonOwner(t *testing.T) {
+	mux, _, jwt, st := setupDashboardMux(t)
+	_ = createTestUser(t, st, jwt, "ownerone", "user")
+	otherCookie := createTestUser(t, st, jwt, "ownertwo", "user")
+	owner, err := st.GetUserByUsername("ownerone")
+	if err != nil {
+		t.Fatalf("GetUserByUsername: %v", err)
+	}
+	tok, _, _ := st.CreateToken("not-yours", owner.ID)
+
+	req := httptest.NewRequest("DELETE", "/dashboard/tokens/"+tok.ID, nil)
+	req.AddCookie(otherCookie)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("non-owner DELETE /dashboard/tokens/:id status = %d, want 404", resp.StatusCode)
+	}
+	if _, err := st.ValidateTokenByID(tok.ID); err != nil {
+		t.Fatalf("non-owner delete should leave token active: %v", err)
 	}
 }
 
@@ -585,4 +613,3 @@ func TestLayoutFOUCPreventionScript(t *testing.T) {
 		t.Error("FOUC script (fonzygrok-theme) should appear BEFORE style.css link in <head>")
 	}
 }
-

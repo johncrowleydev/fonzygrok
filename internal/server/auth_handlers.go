@@ -2,11 +2,11 @@
 // user registration, login, logout, and user info.
 //
 // SECURITY:
-// - Passwords are NEVER logged or returned in responses.
-// - Login failures use generic "invalid credentials" — never reveal
-//   whether username or password was wrong.
-// - Registration validates invite code BEFORE creating user to avoid
-//   orphaned accounts.
+//   - Passwords are NEVER logged or returned in responses.
+//   - Login failures use generic "invalid credentials" — never reveal
+//     whether username or password was wrong.
+//   - Registration atomically creates users and redeems invite codes to avoid
+//     invite reuse races and orphaned accounts.
 //
 // REF: SPR-018 T-061, T-062, T-063, T-064
 package server
@@ -34,10 +34,10 @@ const sessionMaxAge = 86400
 //
 // POST /api/v1/register
 //
-// FLOW: validate input → validate invite code → hash password →
-//       create user → redeem invite → issue JWT.
-// DECISION: Validate invite code BEFORE creating user to prevent
-// orphaned users if invite validation fails after user creation.
+// FLOW: validate input → hash password → atomically create user and redeem invite → issue JWT.
+// DECISION: user creation and invite redemption are performed in one store
+// transaction so concurrent registration attempts cannot reuse an invite or
+// leave orphaned users.
 func (a *AdminAPI) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username   string `json:"username"`
@@ -73,13 +73,6 @@ func (a *AdminAPI) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate invite code BEFORE creating user.
-	invite, err := a.store.ValidateInviteCode(req.InviteCode)
-	if err != nil {
-		a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Invalid or expired invite code")
-		return
-	}
-
 	// Hash password.
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -88,22 +81,20 @@ func (a *AdminAPI) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user.
-	user, err := a.store.CreateUser(req.Username, req.Email, hash, "user")
+	// Create user and redeem invite code atomically.
+	user, err := a.store.RegisterUserWithInviteCode(req.Username, req.Email, hash, req.InviteCode)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "unique") {
 			a.writeAdminError(w, http.StatusConflict, "conflict", "Username or email already taken")
 			return
 		}
-		a.logger.Error("register: create user", "error", err)
+		if strings.Contains(err.Error(), "invite code") {
+			a.writeAdminError(w, http.StatusBadRequest, "validation_error", "Invalid or expired invite code")
+			return
+		}
+		a.logger.Error("register: create user with invite", "error", err)
 		a.writeAdminError(w, http.StatusInternalServerError, "internal_error", "Registration failed")
 		return
-	}
-
-	// Redeem invite code.
-	if err := a.store.RedeemInviteCode(invite.ID, user.ID); err != nil {
-		a.logger.Error("register: redeem invite", "error", err, "invite_id", invite.ID)
-		// User was created but invite redeem failed — log but don't fail registration.
 	}
 
 	// Issue JWT.
@@ -364,24 +355,8 @@ func (a *AdminAPI) handleDeleteTokenAuth(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// For non-admin users, verify ownership before delete.
-	if claims.Role != "admin" {
-		tokens, _ := a.store.ListTokens()
-		found := false
-		for _, t := range tokens {
-			if t.ID == tokenID && t.UserID != nil && *t.UserID == claims.UserID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			a.writeAdminError(w, http.StatusNotFound, "not_found", "Token not found")
-			return
-		}
-	}
-
-	if err := a.store.DeleteToken(tokenID); err != nil {
-		if strings.Contains(err.Error(), "not found") {
+	if err := a.store.DeleteTokenForUser(tokenID, claims.UserID, claims.Role); err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "revoked") {
 			a.writeAdminError(w, http.StatusNotFound, "not_found", "Token not found")
 			return
 		}

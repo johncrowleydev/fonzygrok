@@ -128,6 +128,90 @@ func (s *Store) RedeemInviteCode(codeID, usedBy string) error {
 	return nil
 }
 
+// RegisterUserWithInviteCode atomically validates and redeems an invite code
+// while creating a user. The invite row is locked for update so concurrent
+// registrations cannot both observe the same invite as unused.
+func (s *Store) RegisterUserWithInviteCode(username, email, passwordHash, inviteCode string) (*User, error) {
+	if username == "" {
+		return nil, fmt.Errorf("store: username is required")
+	}
+	if email == "" {
+		return nil, fmt.Errorf("store: email is required")
+	}
+	if passwordHash == "" {
+		return nil, fmt.Errorf("store: password hash is required")
+	}
+	if inviteCode == "" {
+		return nil, fmt.Errorf("store: invite code is required")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("store: begin registration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var ic InviteCode
+	var usedBy sql.NullString
+	err = tx.QueryRow(
+		`SELECT id, code, created_by, used_by, used_at, created_at, is_active
+		 FROM invite_codes WHERE code = $1 FOR UPDATE`,
+		inviteCode,
+	).Scan(&ic.ID, &ic.Code, &ic.CreatedBy, &usedBy, &ic.UsedAt, &ic.CreatedAt, &ic.IsActive)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("store: invalid invite code")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: validate invite code: %w", err)
+	}
+	if !ic.IsActive {
+		return nil, fmt.Errorf("store: invite code is deactivated")
+	}
+	if usedBy.Valid {
+		return nil, fmt.Errorf("store: invite code already used")
+	}
+
+	id := UserIDPrefix + auth.RandomHex(12)
+	now := time.Now().UTC()
+	_, err = tx.Exec(
+		`INSERT INTO users (id, username, email, password_hash, role, created_at, is_active)
+		 VALUES ($1, $2, $3, $4, 'user', $5, TRUE)`,
+		id, username, email, passwordHash, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: create user: %w", err)
+	}
+
+	result, err := tx.Exec(
+		`UPDATE invite_codes SET used_by = $1, used_at = $2 WHERE id = $3 AND used_by IS NULL`,
+		id, now, ic.ID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: redeem invite code: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("store: redeem invite rows affected: %w", err)
+	}
+	if rows == 0 {
+		return nil, fmt.Errorf("store: invite code already redeemed or not found")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("store: commit registration transaction: %w", err)
+	}
+
+	return &User{
+		ID:           id,
+		Username:     username,
+		Email:        email,
+		PasswordHash: passwordHash,
+		Role:         "user",
+		CreatedAt:    now,
+		IsActive:     true,
+	}, nil
+}
+
 // ListInviteCodes returns all invite codes ordered by creation date.
 func (s *Store) ListInviteCodes() ([]InviteCode, error) {
 	rows, err := s.db.Query(

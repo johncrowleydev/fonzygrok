@@ -151,3 +151,28 @@ func TestInviteCodeFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisterUserWithInviteCodeRollsBackUserWhenRedeemFails(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	admin, _ := st.CreateUser("admin5", "admin5@test.com", "$2a$12$hash", "admin")
+	ic, code, _ := st.CreateInviteCode(admin.ID)
+	redeemer, _ := st.CreateUser("firstredeemer", "firstredeemer@test.com", "$2a$12$hash", "user")
+
+	// Simulate a race: code validates initially, then is redeemed before registration commits.
+	if _, err := st.ValidateInviteCode(code); err != nil {
+		t.Fatalf("ValidateInviteCode: %v", err)
+	}
+	if err := st.RedeemInviteCode(ic.ID, redeemer.ID); err != nil {
+		t.Fatalf("RedeemInviteCode: %v", err)
+	}
+
+	_, err := st.RegisterUserWithInviteCode("raceuser", "race@test.com", "$2a$12$hash", code)
+	if err == nil {
+		t.Fatal("expected registration to fail when invite is concurrently redeemed")
+	}
+	if _, err := st.GetUserByUsername("raceuser"); err == nil {
+		t.Fatal("registration failure must roll back user creation")
+	}
+}
