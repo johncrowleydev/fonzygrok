@@ -629,6 +629,7 @@ Production deployment is tag-triggered through `.github/workflows/release.yml`. 
 2. Create and push an approved SemVer tag, for example:
 
 ```bash
+cd ~/fonzygrok
 git checkout main
 git pull origin main
 git tag vX.Y.Z

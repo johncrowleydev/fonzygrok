@@ -48,13 +48,21 @@ version: 2.0.0
 ### 2.1 Backup / Restore Commands
 
 ```bash
+# Load configured DB identity from the Compose env file when present.
+cd ~/fonzygrok/docker
+set -a
+[ -f .env ] && . ./.env
+set +a
+DB_USER="${POSTGRES_USER:-fonzygrok}"
+DB_NAME="${POSTGRES_DB:-fonzygrok}"
+
 # Backup
-docker exec fonzygrok-postgres pg_dump -U fonzygrok fonzygrok \
-  > fonzygrok_backup_$(date +%Y%m%d).sql
+docker exec fonzygrok-postgres pg_dump -U "$DB_USER" "$DB_NAME" \
+  > "fonzygrok_backup_$(date +%Y%m%d).sql"
 
 # Restore
 cat fonzygrok_backup_YYYYMMDD.sql | \
-  docker exec -i fonzygrok-postgres psql -U fonzygrok fonzygrok
+  docker exec -i fonzygrok-postgres psql -U "$DB_USER" "$DB_NAME"
 ```
 
 ---
