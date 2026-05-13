@@ -361,6 +361,25 @@ func TestProxyForwardedHeaders(t *testing.T) {
 
 // --- T-011A: Error Responses ---
 
+func TestResponseBodyWriterFlushesStreamingResponses(t *testing.T) {
+	w := httptest.NewRecorder()
+	resp := &http.Response{
+		Header:        http.Header{"Content-Type": {"text/event-stream"}},
+		ContentLength: -1,
+	}
+
+	writer := responseBodyWriter(w, resp)
+	if _, err := writer.Write([]byte(": connected\n\n")); err != nil {
+		t.Fatalf("write streaming response: %v", err)
+	}
+
+	if !w.Flushed {
+		t.Fatal("expected streaming response write to flush immediately")
+	}
+}
+
+// --- T-011A: Error Responses ---
+
 func TestError404TunnelNotFound(t *testing.T) {
 	edge, _, st := newTestEdgeRouter(t)
 	defer st.Close()
@@ -782,12 +801,12 @@ func TestExtractSubdomainWithApexDomain(t *testing.T) {
 		host     string
 		expected string
 	}{
-		{"fonzygrok.com", ""},             // apex domain
-		{"fonzygrok.com:443", ""},         // apex with port
-		{"tunnel.fonzygrok.com", ""},      // base domain
+		{"fonzygrok.com", ""},               // apex domain
+		{"fonzygrok.com:443", ""},           // apex with port
+		{"tunnel.fonzygrok.com", ""},        // base domain
 		{"abc.tunnel.fonzygrok.com", "abc"}, // subdomain
-		{"FONZYGROK.COM", ""},             // case-insensitive apex
-		{"other.com", ""},                 // unrelated
+		{"FONZYGROK.COM", ""},               // case-insensitive apex
+		{"other.com", ""},                   // unrelated
 	}
 
 	for _, tt := range tests {
@@ -952,4 +971,3 @@ var (
 	_ = net.SplitHostPort
 	_ = fmt.Sprintf
 )
-

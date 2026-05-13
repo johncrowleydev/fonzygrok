@@ -51,6 +51,35 @@ const (
 	defaultHTTPIdleTimeout       = 120 * time.Second
 )
 
+type flushingResponseWriter struct {
+	writer  io.Writer
+	flusher http.Flusher
+}
+
+func (w flushingResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if n > 0 {
+		w.flusher.Flush()
+	}
+	return n, err
+}
+
+func responseBodyWriter(w http.ResponseWriter, resp *http.Response) io.Writer {
+	if !shouldFlushResponse(resp) {
+		return w
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return w
+	}
+	return flushingResponseWriter{writer: w, flusher: flusher}
+}
+
+func shouldFlushResponse(resp *http.Response) bool {
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	return strings.HasPrefix(contentType, "text/event-stream") || resp.ContentLength == -1
+}
+
 // EdgeRouter routes incoming public HTTP requests to the correct tunnel
 // by extracting the subdomain from the Host header and proxying the
 // request through an SSH channel. Per CON-002 §3.
@@ -396,24 +425,22 @@ func (e *EdgeRouter) proxyRequest(w http.ResponseWriter, r *http.Request, entry 
 		}
 		w.WriteHeader(result.resp.StatusCode)
 
-		// Copy response body, counting bytes out.
+		// Copy response body, counting bytes out. Flush streaming responses after
+		// each write so SSE and other long-lived responses reach browsers before
+		// the upstream body closes.
+		bodyWriter := responseBodyWriter(w, result.resp)
 		if entry.Metrics != nil {
-			cw := NewCountingWriter(w, &entry.Metrics.BytesOut)
-			if _, err := io.Copy(cw, result.resp.Body); err != nil {
-				e.logger.Error("edge: copy response body",
-					"tunnel_id", entry.TunnelID,
-					"error", err,
-				)
-			}
+			bodyWriter = NewCountingWriter(bodyWriter, &entry.Metrics.BytesOut)
+		}
+		if _, err := io.Copy(bodyWriter, result.resp.Body); err != nil {
+			e.logger.Error("edge: copy response body",
+				"tunnel_id", entry.TunnelID,
+				"error", err,
+			)
+		}
+		if entry.Metrics != nil {
 			// Record the proxy request.
 			entry.Metrics.RecordRequest()
-		} else {
-			if _, err := io.Copy(w, result.resp.Body); err != nil {
-				e.logger.Error("edge: copy response body",
-					"tunnel_id", entry.TunnelID,
-					"error", err,
-				)
-			}
 		}
 
 		e.logger.Debug("edge: request proxied",
