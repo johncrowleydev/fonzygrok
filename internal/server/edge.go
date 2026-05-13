@@ -75,6 +75,17 @@ func responseBodyWriter(w http.ResponseWriter, resp *http.Response) io.Writer {
 	return flushingResponseWriter{writer: w, flusher: flusher}
 }
 
+func flushResponseHeaders(w http.ResponseWriter, resp *http.Response) {
+	if !shouldFlushResponse(resp) {
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+	flusher.Flush()
+}
+
 func shouldFlushResponse(resp *http.Response) bool {
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	return strings.HasPrefix(contentType, "text/event-stream") || resp.ContentLength == -1
@@ -424,6 +435,7 @@ func (e *EdgeRouter) proxyRequest(w http.ResponseWriter, r *http.Request, entry 
 			}
 		}
 		w.WriteHeader(result.resp.StatusCode)
+		flushResponseHeaders(w, result.resp)
 
 		// Copy response body, counting bytes out. Flush streaming responses after
 		// each write so SSE and other long-lived responses reach browsers before

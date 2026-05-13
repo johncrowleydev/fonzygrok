@@ -359,22 +359,53 @@ func TestProxyForwardedHeaders(t *testing.T) {
 	}
 }
 
-// --- T-011A: Error Responses ---
+// --- T-011A: Streaming Responses ---
 
-func TestResponseBodyWriterFlushesStreamingResponses(t *testing.T) {
+func TestResponseBodyWriterFlushesEventStreamContentType(t *testing.T) {
 	w := httptest.NewRecorder()
 	resp := &http.Response{
-		Header:        http.Header{"Content-Type": {"text/event-stream"}},
-		ContentLength: -1,
+		Header:        http.Header{"Content-Type": {"text/event-stream; charset=utf-8"}},
+		ContentLength: 0,
 	}
 
 	writer := responseBodyWriter(w, resp)
 	if _, err := writer.Write([]byte(": connected\n\n")); err != nil {
-		t.Fatalf("write streaming response: %v", err)
+		t.Fatalf("write SSE response: %v", err)
 	}
 
 	if !w.Flushed {
-		t.Fatal("expected streaming response write to flush immediately")
+		t.Fatal("expected SSE response write to flush immediately")
+	}
+}
+
+func TestResponseBodyWriterFlushesUnknownLengthResponse(t *testing.T) {
+	w := httptest.NewRecorder()
+	resp := &http.Response{
+		Header:        http.Header{"Content-Type": {"application/octet-stream"}},
+		ContentLength: -1,
+	}
+
+	writer := responseBodyWriter(w, resp)
+	if _, err := writer.Write([]byte("chunk")); err != nil {
+		t.Fatalf("write unknown-length response: %v", err)
+	}
+
+	if !w.Flushed {
+		t.Fatal("expected unknown-length response write to flush immediately")
+	}
+}
+
+func TestFlushResponseHeadersFlushesStreamingHeaders(t *testing.T) {
+	w := httptest.NewRecorder()
+	resp := &http.Response{
+		Header:        http.Header{"Content-Type": {"text/event-stream"}},
+		ContentLength: 0,
+	}
+
+	flushResponseHeaders(w, resp)
+
+	if !w.Flushed {
+		t.Fatal("expected streaming headers to flush before the first body chunk")
 	}
 }
 
