@@ -451,6 +451,56 @@ func TestListActive(t *testing.T) {
 	}
 }
 
+func TestListActiveReturnsDeterministicOrder(t *testing.T) {
+	tm := NewTunnelManager("example.com", nil, testLogger())
+
+	base := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
+	entries := []TunnelEntry{
+		// Intentionally inserted out of expected order to prove ListActive sorts
+		// by CreatedAt first, then Name, then TunnelID.
+		{TunnelID: "id-later-alpha", Name: "alpha", CreatedAt: base.Add(10 * time.Minute)},
+		{TunnelID: "id-base-charlie", Name: "charlie", CreatedAt: base},
+		{TunnelID: "id-base-bravo", Name: "bravo", CreatedAt: base},
+		{TunnelID: "id-earliest-zulu", Name: "zulu", CreatedAt: base.Add(-10 * time.Minute)},
+		{TunnelID: "id-base-alpha-2", Name: "alpha", CreatedAt: base},
+		{TunnelID: "id-base-alpha-1", Name: "alpha", CreatedAt: base},
+	}
+
+	tm.mu.Lock()
+	for i := range entries {
+		tm.tunnels[entries[i].TunnelID] = &entries[i]
+	}
+	tm.mu.Unlock()
+
+	want := []string{
+		"id-earliest-zulu",
+		"id-base-alpha-1",
+		"id-base-alpha-2",
+		"id-base-bravo",
+		"id-base-charlie",
+		"id-later-alpha",
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		active := tm.ListActive()
+		if len(active) != len(want) {
+			t.Fatalf("ListActive() returned %d tunnels, want %d", len(active), len(want))
+		}
+		for i, entry := range active {
+			if entry.TunnelID != want[i] {
+				t.Fatalf("ListActive()[%d].TunnelID on attempt %d = %q, want %q; full order: %v", i, attempt+1, entry.TunnelID, want[i], tunnelIDs(active))
+			}
+		}
+	}
+}
+
+func tunnelIDs(entries []TunnelEntry) []string {
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ids = append(ids, entry.TunnelID)
+	}
+	return ids
+}
+
 func TestConcurrentAccess(t *testing.T) {
 	tm, st := newTestTunnelManager(t)
 	defer st.Close()

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -56,14 +57,14 @@ type TunnelManager struct {
 	scheme      string // "http" or "https"
 	store       *store.Store
 	logger      *slog.Logger
-	tcpEdge     *TCPEdge      // optional: TCP port allocator
-	rateLimiter *RateLimiter  // optional: per-tunnel rate limiter
+	tcpEdge     *TCPEdge     // optional: TCP port allocator
+	rateLimiter *RateLimiter // optional: per-tunnel rate limiter
 
 	mu        sync.RWMutex
-	tunnels   map[string]*TunnelEntry         // tunnelID → entry
-	byName    map[string]*TunnelEntry         // name/subdomain → entry
-	bySession map[*Session]map[string]bool    // session → set of tunnelIDs
-	byPort    map[int]*TunnelEntry            // assignedPort → entry (TCP only)
+	tunnels   map[string]*TunnelEntry      // tunnelID → entry
+	byName    map[string]*TunnelEntry      // name/subdomain → entry
+	bySession map[*Session]map[string]bool // session → set of tunnelIDs
+	byPort    map[int]*TunnelEntry         // assignedPort → entry (TCP only)
 }
 
 // NewTunnelManager creates a new TunnelManager.
@@ -314,12 +315,21 @@ func (tm *TunnelManager) DeregisterBySession(session *Session) {
 // ListActive returns all currently active tunnel entries.
 func (tm *TunnelManager) ListActive() []TunnelEntry {
 	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
 	result := make([]TunnelEntry, 0, len(tm.tunnels))
 	for _, entry := range tm.tunnels {
 		result = append(result, *entry)
 	}
+	tm.mu.RUnlock()
+
+	sort.Slice(result, func(i, j int) bool {
+		if !result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].CreatedAt.Before(result[j].CreatedAt)
+		}
+		if result[i].Name != result[j].Name {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].TunnelID < result[j].TunnelID
+	})
 	return result
 }
 
