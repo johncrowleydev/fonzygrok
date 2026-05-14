@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
@@ -508,6 +510,45 @@ func TestHTMXTunnelListEmpty(t *testing.T) {
 	}
 }
 
+func TestHTMXTunnelListResponsiveMarkup(t *testing.T) {
+	tmpl := template.Must(template.New("").Funcs(templateFuncMap()).ParseFS(
+		dashboardFS,
+		"dashboard_assets/templates/partials/tunnel_list.html",
+	))
+	data := struct {
+		Tunnels []tunnelView
+	}{
+		Tunnels: []tunnelView{{
+			Name:        "mobile-demo",
+			PublicURL:   "http://mobile-demo.test.com",
+			LocalPort:   3000,
+			ConnectedAt: "May 14, 10:00",
+		}},
+	}
+
+	var out bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&out, "tunnel_list.html", data); err != nil {
+		t.Fatalf("ExecuteTemplate tunnel_list.html: %v", err)
+	}
+	html := out.String()
+
+	checks := []string{
+		`class="tunnel-table"`,
+		`aria-label="Active tunnels"`,
+		`data-label="Name"`,
+		`data-label="Public URL"`,
+		`data-label="Local Port"`,
+		`data-label="Connected"`,
+		`mobile-demo`,
+		`http://mobile-demo.test.com`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(html, check) {
+			t.Errorf("tunnel partial missing %q", check)
+		}
+	}
+}
+
 // ── Static File Test ─────────────────────────────────────────────────
 
 func TestStaticCSS(t *testing.T) {
@@ -524,6 +565,28 @@ func TestStaticCSS(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "--bg-primary") {
 		t.Error("CSS should contain custom properties")
+	}
+}
+
+func TestStaticCSSIncludesTunnelMobileLayout(t *testing.T) {
+	body, err := dashboardFS.ReadFile("dashboard_assets/static/style.css")
+	if err != nil {
+		t.Fatalf("ReadFile style.css: %v", err)
+	}
+	css := string(body)
+
+	checks := []string{
+		`.tunnel-table`,
+		`.tunnel-table-wrap`,
+		`@media (max-width: 640px)`,
+		`content: attr(data-label)`,
+		`overflow-wrap: anywhere`,
+		`-webkit-overflow-scrolling: touch`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(css, check) {
+			t.Errorf("CSS missing %q", check)
+		}
 	}
 }
 
