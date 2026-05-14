@@ -1,25 +1,25 @@
 {{if .Tunnels}}
-<table>
+<table class="tunnel-table" aria-label="Active tunnels">
     <thead>
         <tr>
             <th>Name</th>
             <th>Public URL</th>
-            <th class="hide-mobile">Local Port</th>
-            <th class="hide-mobile">Connected</th>
+            <th>Local Port</th>
+            <th>Connected</th>
         </tr>
     </thead>
     <tbody>
         {{range .Tunnels}}
         <tr>
-            <td><strong>{{.Name}}</strong></td>
-            <td>
-                <span class="copy-wrap">
+            <td data-label="Name"><strong>{{.Name}}</strong></td>
+            <td data-label="Public URL">
+                <span class="copy-wrap tunnel-url-copy">
                     <a href="{{.PublicURL}}" target="_blank" class="mono">{{.PublicURL}}</a>
                     <button class="copy-btn" onclick="navigator.clipboard.writeText('{{.PublicURL}}');this.textContent='✔';this.classList.add('copied');setTimeout(()=>{this.textContent='📋';this.classList.remove('copied')},2000)" title="Copy URL">📋</button>
                 </span>
             </td>
-            <td class="hide-mobile">{{.LocalPort}}</td>
-            <td class="hide-mobile">{{.ConnectedAt}}</td>
+            <td data-label="Local Port">{{.LocalPort}}</td>
+            <td data-label="Connected">{{.ConnectedAt}}</td>
         </tr>
         {{end}}
     </tbody>
