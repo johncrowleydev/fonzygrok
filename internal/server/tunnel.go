@@ -315,12 +315,12 @@ func (tm *TunnelManager) DeregisterBySession(session *Session) {
 // ListActive returns all currently active tunnel entries.
 func (tm *TunnelManager) ListActive() []TunnelEntry {
 	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
 	result := make([]TunnelEntry, 0, len(tm.tunnels))
 	for _, entry := range tm.tunnels {
 		result = append(result, *entry)
 	}
+	tm.mu.RUnlock()
+
 	sort.Slice(result, func(i, j int) bool {
 		if !result[i].CreatedAt.Equal(result[j].CreatedAt) {
 			return result[i].CreatedAt.Before(result[j].CreatedAt)

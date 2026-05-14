@@ -472,8 +472,7 @@ func TestListActiveReturnsDeterministicOrder(t *testing.T) {
 
 	tm.mu.Lock()
 	for i := range entries {
-		entry := entries[i]
-		tm.tunnels[entry.TunnelID] = &entry
+		tm.tunnels[entries[i].TunnelID] = &entries[i]
 	}
 	tm.mu.Unlock()
 
