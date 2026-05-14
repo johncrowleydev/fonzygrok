@@ -456,18 +456,14 @@ func TestListActiveReturnsDeterministicOrder(t *testing.T) {
 
 	base := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
 	entries := []TunnelEntry{
-		{TunnelID: "id-mu", Name: "mu", CreatedAt: base},
-		{TunnelID: "id-alpha", Name: "alpha", CreatedAt: base},
-		{TunnelID: "id-charlie", Name: "charlie", CreatedAt: base},
-		{TunnelID: "id-bravo", Name: "bravo", CreatedAt: base},
-		{TunnelID: "id-foxtrot", Name: "foxtrot", CreatedAt: base},
-		{TunnelID: "id-delta", Name: "delta", CreatedAt: base},
-		{TunnelID: "id-echo", Name: "echo", CreatedAt: base},
-		{TunnelID: "id-india", Name: "india", CreatedAt: base},
-		{TunnelID: "id-golf", Name: "golf", CreatedAt: base},
-		{TunnelID: "id-hotel", Name: "hotel", CreatedAt: base},
-		{TunnelID: "id-lima", Name: "lima", CreatedAt: base},
-		{TunnelID: "id-juliet", Name: "juliet", CreatedAt: base},
+		// Intentionally inserted out of expected order to prove ListActive sorts
+		// by CreatedAt first, then Name, then TunnelID.
+		{TunnelID: "id-later-alpha", Name: "alpha", CreatedAt: base.Add(10 * time.Minute)},
+		{TunnelID: "id-base-charlie", Name: "charlie", CreatedAt: base},
+		{TunnelID: "id-base-bravo", Name: "bravo", CreatedAt: base},
+		{TunnelID: "id-earliest-zulu", Name: "zulu", CreatedAt: base.Add(-10 * time.Minute)},
+		{TunnelID: "id-base-alpha-2", Name: "alpha", CreatedAt: base},
+		{TunnelID: "id-base-alpha-1", Name: "alpha", CreatedAt: base},
 	}
 
 	tm.mu.Lock()
@@ -476,7 +472,14 @@ func TestListActiveReturnsDeterministicOrder(t *testing.T) {
 	}
 	tm.mu.Unlock()
 
-	want := []string{"id-alpha", "id-bravo", "id-charlie", "id-delta", "id-echo", "id-foxtrot", "id-golf", "id-hotel", "id-india", "id-juliet", "id-lima", "id-mu"}
+	want := []string{
+		"id-earliest-zulu",
+		"id-base-alpha-1",
+		"id-base-alpha-2",
+		"id-base-bravo",
+		"id-base-charlie",
+		"id-later-alpha",
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		active := tm.ListActive()
 		if len(active) != len(want) {
