@@ -451,6 +451,54 @@ func TestListActive(t *testing.T) {
 	}
 }
 
+func TestListActiveReturnsDeterministicOrder(t *testing.T) {
+	tm := NewTunnelManager("example.com", nil, testLogger())
+
+	base := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
+	entries := []TunnelEntry{
+		{TunnelID: "id-mu", Name: "mu", CreatedAt: base},
+		{TunnelID: "id-alpha", Name: "alpha", CreatedAt: base},
+		{TunnelID: "id-charlie", Name: "charlie", CreatedAt: base},
+		{TunnelID: "id-bravo", Name: "bravo", CreatedAt: base},
+		{TunnelID: "id-foxtrot", Name: "foxtrot", CreatedAt: base},
+		{TunnelID: "id-delta", Name: "delta", CreatedAt: base},
+		{TunnelID: "id-echo", Name: "echo", CreatedAt: base},
+		{TunnelID: "id-india", Name: "india", CreatedAt: base},
+		{TunnelID: "id-golf", Name: "golf", CreatedAt: base},
+		{TunnelID: "id-hotel", Name: "hotel", CreatedAt: base},
+		{TunnelID: "id-lima", Name: "lima", CreatedAt: base},
+		{TunnelID: "id-juliet", Name: "juliet", CreatedAt: base},
+	}
+
+	tm.mu.Lock()
+	for i := range entries {
+		entry := entries[i]
+		tm.tunnels[entry.TunnelID] = &entry
+	}
+	tm.mu.Unlock()
+
+	want := []string{"id-alpha", "id-bravo", "id-charlie", "id-delta", "id-echo", "id-foxtrot", "id-golf", "id-hotel", "id-india", "id-juliet", "id-lima", "id-mu"}
+	for attempt := 0; attempt < 5; attempt++ {
+		active := tm.ListActive()
+		if len(active) != len(want) {
+			t.Fatalf("ListActive() returned %d tunnels, want %d", len(active), len(want))
+		}
+		for i, entry := range active {
+			if entry.TunnelID != want[i] {
+				t.Fatalf("ListActive()[%d].TunnelID on attempt %d = %q, want %q; full order: %v", i, attempt+1, entry.TunnelID, want[i], tunnelIDs(active))
+			}
+		}
+	}
+}
+
+func tunnelIDs(entries []TunnelEntry) []string {
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ids = append(ids, entry.TunnelID)
+	}
+	return ids
+}
+
 func TestConcurrentAccess(t *testing.T) {
 	tm, st := newTestTunnelManager(t)
 	defer st.Close()
